@@ -23,11 +23,12 @@ model Users {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  feedback   Feedback[]
-  ticket     Ticket[]
-  cart       Cart[]
-  systemLogs SystemLogs[]
-  order      Order[]
+  feedback         Feedback[]
+  ticket           Ticket[]
+  cart             Cart[]
+  systemLogs       SystemLogs[]
+  order            Order[]
+  forwardedMessage ForwardedMessage[]
 }
 
 model Staff {
@@ -74,10 +75,9 @@ model Products {
   brandId String
   brand   Brands @relation(fields: [brandId], references: [id])
 
-  inventory  Inventory[]
-  cartItem   CartItem[]
-  promotions Promotions? @relation(fields: [promotionsId], references: [id])
-  orderItem  OrderItem[]
+  inventory Inventory[]
+  cartItem  CartItem[]
+  orderItem OrderItem[]
 }
 
 model Inventory {
@@ -125,15 +125,13 @@ model Promotions {
   id          String   @id @default(uuid())
   name        String
   description String
-  type        String // e.g. percentage, fixed amount, buy one get one
-  value       Float
+  criteria    String
+  thumbnail   String
   startDate   DateTime
   endDate     DateTime
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  products Products[]
 }
 
 model Feedback {
@@ -196,15 +194,27 @@ model SystemLogs {
 }
 
 model Order {
-  id            String        @id @default(uuid())
-  userId        String
-  totalAmount   Float
-  address       String
-  status        OrderStatus   @default(PENDING)
-  paymentStatus PaymentStatus @default(PENDING)
-  paymentMethod String
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id               String        @id @default(uuid())
+  userId           String
+  totalAmount      Float
+  discountedAmount Float?
+  name             String
+  email            String
+  phoneNumber      String
+  status           OrderStatus   @default(PENDING)
+  paymentStatus    PaymentStatus @default(PENDING)
+  orderOption      String
+  preferredDate    DateTime
+  remarks          String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  processingAt DateTime?
+  shippedAt    DateTime?
+  completedAt  DateTime?
+
+  reasonCancelled String?
+  cancelledAt     DateTime?
 
   user      Users       @relation(fields: [userId], references: [id])
   orderItem OrderItem[]
@@ -215,7 +225,7 @@ model OrderItem {
   orderId   String
   productId String
   quantity  Int
-  price     Float // price at the time of order
+  price     Float // unit price
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -223,21 +233,22 @@ model OrderItem {
   product Products @relation(fields: [productId], references: [id])
 }
 
-model Inquiries {
-  id        String   @id @default(uuid())
-  name      String
-  email     String
-  subject   String
+model ForwardedMessage {
+  id        String                 @id @default(cuid())
+  userId    String? // if you have authentication, otherwise optional
+  user      Users?                 @relation(fields: [userId], references: [authId])
   message   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status    ForwardedMessageStatus @default(PENDING)
+  reply     String? // admin’s reply
+  repliedAt DateTime? // when admin replied
+  createdAt DateTime               @default(now())
 }
 
 enum OrderStatus {
   PENDING
   PROCESSING
   SHIPPED
-  DELIVERED
+  COMPLETED
   CANCELLED
 }
 
@@ -259,4 +270,10 @@ enum TicketPriority {
   MEDIUM
   HIGH
   URGENT
+}
+
+enum ForwardedMessageStatus {
+  PENDING
+  SEEN
+  RESOLVED
 }
