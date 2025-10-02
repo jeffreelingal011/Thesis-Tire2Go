@@ -3,14 +3,21 @@ import TireSearch from "@/components/globals/TireSearch";
 import Image from "next/image";
 import BrandsCollection from "@/components/globals/BrandsCollection";
 import { Button } from "@/components/ui/button";
-import BannerCarousel from "@/components/globals/BannerCarousel";
+import Link from "next/link";
+import HeroCarousel from '@/components/globals/HeroCarousel';
 
 const Page = () => {
   return (
     <div className="min-h-screen">
-      <div className="bg-hero w-full h-[75vh]">
-        <div className="grid max-w-7xl pb-18 mx-auto pt-40 gap-10 lg:grid-cols-2 grid-cols-1">
-          <BannerCarousel />
+      <div className="bg-hero w-full flex flex-col items-start justify-end py-20 h-[80vh]">
+        <div className="px-40 flex w-full items-center justify-between mb-10">
+          <h3 className="text-white font-semibold text-5xl italic tracking-tight leading-relaxed">
+            FIND THE INNOVATIVE TIRE <br />
+            <span className="font-black">YOU NEED</span>
+          </h3>
+        </div>
+        <div className="flex w-full px-40 items-start justify-between">
+          <HeroCarousel />
           <TireSearch />
         </div>
       </div>
@@ -39,9 +46,11 @@ const Page = () => {
               className="object-contain size-full"
             />
           </div>
-          <Button size="lg" className="mx-auto mt-5 text-center">
-            View Car Models
-          </Button>
+          <Link href="/car-models">
+            <Button size="lg" className="mx-auto mt-5 text-center">
+              View Car Models
+            </Button>
+          </Link>
         </div>
       </section>
       <section className="pt-10 pb-10 flex flex-col items-center justify-center bg-[#f5f5f5]">
