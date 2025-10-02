@@ -42,7 +42,7 @@ const Page = () => {
     router.push("/checkout-order-details");
   };
 
-  const item = items[0]; // since you allow only one product
+  const item = items[0]; // since you allow only one product.
   const srpPrice = item.unitPrice;
   const srpTotal = item.unitPrice * item.quantity;
   const discountedTotal =
