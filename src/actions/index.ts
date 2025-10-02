@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use server";
 
 import z from "zod";
@@ -7,12 +8,19 @@ import {
   InventoryValidators,
   PolicyValidators,
   ProductValidators,
+  PromotionValidators,
   StaffValidators,
   TipsGuidesValidators,
 } from "@/validators";
 import db from "@/lib/db";
-import { InventoryResponse } from "@/types";
+import { InventoryResponse, OrderWithOrderItem } from "@/types";
 import { getStockStatus } from "@/lib/utils";
+import { CartItem, CustomerDetails, DeliveryOption } from "@/hooks/use-cart";
+import { auth } from "@clerk/nextjs/server";
+import { OrderCompleteHTML } from "@/components/email-template/order-complete";
+import { sendMail } from "@/lib/nodemailer";
+import { OrderStatusEmailHTML } from "@/components/email-template/order-status";
+import { OrderRejectionEmailHTML } from "@/components/email-template/order-rejection";
 
 export const createBrand = async (values: z.infer<typeof BrandValidators>) => {
   const parseValues = BrandValidators.parse(values);
@@ -736,5 +744,320 @@ export const deletePolicy = async (id: string) => {
   } catch (error) {
     console.error("Error deleting policy:", error);
     return { error: "Failed to delete policy" };
+  }
+};
+
+export const createPromotion = async (
+  values: z.infer<typeof PromotionValidators>
+) => {
+  const parseValues = PromotionValidators.parse(values);
+
+  try {
+    const promotion = await db.promotions.create({
+      data: parseValues,
+    });
+    return { success: "Promotion created successfully", promotion };
+  } catch (error) {
+    console.error("Error creating promotion:", error);
+    return { error: "Failed to create promotion" };
+  }
+};
+
+export const updatePromotion = async (
+  id: string,
+  values: z.infer<typeof PromotionValidators>
+) => {
+  const parseValues = PromotionValidators.parse(values);
+  try {
+    const existingPromotion = await db.promotions.findFirst({
+      where: { id },
+    });
+
+    if (!existingPromotion) {
+      return { error: "Promotion not found" };
+    }
+
+    const updatedPromotion = await db.promotions.update({
+      where: { id },
+      data: parseValues,
+    });
+    return {
+      success: "Promotion updated successfully",
+      promotion: updatedPromotion,
+    };
+  } catch (error) {
+    console.error("Error updating promotion:", error);
+    return { error: "Failed to update promotion" };
+  }
+};
+
+export const deletePromotion = async (id: string) => {
+  try {
+    const existingPromotion = await db.promotions.findFirst({
+      where: { id },
+    });
+
+    if (!existingPromotion) {
+      return { error: "Promotion not found" };
+    }
+
+    await db.promotions.delete({
+      where: { id },
+    });
+
+    return { success: "Promotion deleted successfully" };
+  } catch (error) {
+    console.error("Error deleting promotion:", error);
+    return { error: "Failed to delete promotion" };
+  }
+};
+
+export const placeOrder = async (data: {
+  items: CartItem[];
+  preferredSchedule: Date | null;
+  customerDetails: CustomerDetails;
+  deliveryOption: DeliveryOption;
+  totalAmount: number;
+  discountedAmount?: number;
+}) => {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { error: "You must log in first before you checkout" };
+    }
+
+    const user = await db.users.findUnique({ where: { authId: userId } });
+
+    if (!user) {
+      return { error: "User not found" };
+    }
+
+    const fullName = `${data.customerDetails.firstName} ${data.customerDetails.lastName}`;
+
+    // Create order
+    const response = await db.order.create({
+      data: {
+        userId: user.id,
+        totalAmount: data.totalAmount,
+        discountedAmount: data.discountedAmount ?? 0,
+        name: fullName,
+        email: data.customerDetails.email,
+        phoneNumber: data.customerDetails.phone,
+        orderOption: data.deliveryOption,
+        preferredDate: data.preferredSchedule || new Date(),
+        remarks: data.customerDetails.remarks,
+      },
+    });
+
+    // Insert order items
+    await db.orderItem.createMany({
+      data: data.items.map((item) => ({
+        orderId: response.id,
+        productId: item.id,
+        quantity: item.quantity,
+        price: item.unitPrice,
+      })),
+    });
+
+    // Fetch order with items to return
+    const orderWithItems = await db.order.findUnique({
+      where: { id: response.id },
+      include: {
+        orderItem: {
+          include: { product: { include: { brand: true } } },
+        },
+      },
+    });
+
+    await sendOrderCompletedEmail(
+      orderWithItems as OrderWithOrderItem,
+      data.customerDetails.email
+    );
+
+    return { success: "Order placed successfully", order: orderWithItems };
+  } catch (error) {
+    console.error("Error placing order:", error);
+    return { error: "Failed to place order" };
+  }
+};
+
+export const sendOrderCompletedEmail = async (
+  order: OrderWithOrderItem,
+  email: string
+) => {
+  try {
+    const htmlContent = await OrderCompleteHTML({
+      order,
+    });
+
+    await sendMail(
+      email,
+      `Your order has been completed`,
+      `Your order "${order.id}" has been completed.`,
+      htmlContent
+    );
+
+    return { success: "Email has been sent." };
+  } catch (error) {
+    console.error("Error sending product status email:", error);
+    return { message: "An error occurred. Please try again." };
+  }
+};
+
+export async function updateOrderStatus(orderId: string, status: string) {
+  const now = new Date();
+
+  let updateData: any = { status };
+
+  switch (status.toUpperCase()) {
+    case "PROCESSING":
+      updateData.processingAt = now;
+      break;
+    case "SHIPPED":
+      updateData.shippedAt = now;
+      break;
+    case "COMPLETED":
+      updateData.completedAt = now;
+      break;
+    case "PENDING":
+      updateData = {
+        status,
+        processingAt: null,
+        shippedAt: null,
+        completedAt: null,
+      };
+      break;
+  }
+
+  const order = await db.order.update({
+    where: { id: orderId },
+    data: updateData,
+    include: {
+      orderItem: { include: { product: { include: { brand: true } } } },
+    },
+  });
+
+  // ✅ send email notification
+  await sendOrderStatusEmail(order, order.email);
+
+  return order;
+}
+
+export const sendOrderStatusEmail = async (
+  order: OrderWithOrderItem,
+  email: string
+) => {
+  try {
+    const htmlContent = await OrderStatusEmailHTML({
+      order,
+    });
+
+    await sendMail(
+      email,
+      `Your order has been ${order.status}`,
+      `Your order "${order.id}" has been ${order.status}.`,
+      htmlContent
+    );
+
+    return { success: "Email has been sent." };
+  } catch (error) {
+    console.error("Error sending product status email:", error);
+    return { message: "An error occurred. Please try again." };
+  }
+};
+
+export async function toggleOrderPayment(
+  orderId: string,
+  status: "PAID" | "FAILED"
+) {
+  try {
+    const order = await db.order.update({
+      where: { id: orderId },
+      data: { paymentStatus: status },
+    });
+
+    return { success: true, order };
+  } catch (error) {
+    console.error(error);
+    return { error: "Failed to update payment status" };
+  }
+}
+
+export const deleteOrder = async (id: string) => {
+  try {
+    const existingOrder = await db.order.findFirst({
+      where: { id },
+    });
+
+    if (!existingOrder) {
+      return { error: "Order not found" };
+    }
+
+    await db.order.delete({
+      where: { id },
+    });
+
+    await db.orderItem.deleteMany({
+      where: { orderId: id },
+    });
+
+    return { success: "Order deleted successfully" };
+  } catch (error) {
+    console.error("Error deleting order:", error);
+    return { error: "Failed to delete order" };
+  }
+};
+
+export async function rejectOrder(orderId: string, reason: string) {
+  try {
+    const order = await db.order.update({
+      where: { id: orderId },
+      data: {
+        status: "CANCELLED",
+        paymentStatus: "FAILED",
+        reasonCancelled: reason,
+        cancelledAt: new Date(),
+      },
+      include: {
+        orderItem: {
+          include: {
+            product: {
+              include: { brand: true },
+            },
+          },
+        },
+      },
+    });
+
+    await sendOrderRejectionEmail(order, order.email);
+
+    return { success: true, order };
+  } catch (error) {
+    console.error(error);
+    return { error: "Failed to reject order" };
+  }
+}
+
+export const sendOrderRejectionEmail = async (
+  order: OrderWithOrderItem,
+  email: string
+) => {
+  try {
+    const htmlContent = await OrderRejectionEmailHTML({
+      order,
+    });
+
+    await sendMail(
+      email,
+      `Your order has been REJECTED`,
+      `Your order "${order.id}" has been rejected. Reason: ${order.reasonCancelled}`,
+      htmlContent
+    );
+
+    return { success: "Email has been sent." };
+  } catch (error) {
+    console.error("Error sending product status email:", error);
+    return { message: "An error occurred. Please try again." };
   }
 };
