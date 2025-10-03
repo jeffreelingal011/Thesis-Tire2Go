@@ -1,4 +1,12 @@
-import { Brands, Inventory, Products } from "@prisma/client";
+import {
+  Brands,
+  ForwardedMessage,
+  Inventory,
+  Order,
+  OrderItem,
+  Products,
+  Users,
+} from "@prisma/client";
 
 export interface ProductWithBrand extends Products {
   brand: Brands;
@@ -31,3 +39,13 @@ export type SearchByCar = {
     [model: string]: number[];
   };
 };
+
+export interface OrderWithOrderItem extends Order {
+  orderItem: (OrderItem & {
+    product: Products & { brand: Brands };
+  })[];
+}
+
+export interface ForwardedMessageWithUser extends ForwardedMessage {
+  user: Users | null;
+}
