@@ -48,3 +48,17 @@ export function getStockStatus(
   if (minStock != null && quantity <= minStock) return "LOW_STOCK";
   return "IN_STOCK";
 }
+
+export function formatDate(date: Date) {
+  return new Date(date).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+export const formatCurrency = (value: number) =>
+  value.toLocaleString("en-PH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
