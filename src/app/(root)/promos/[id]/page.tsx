@@ -192,4 +192,3 @@ const Page = async (props: {
 };
 
 export default Page;
-params.id
