@@ -1,191 +1,410 @@
+"use client";
+
 import React from "react";
-import TireSearch from "@/components/globals/TireSearch";
-import Image from "next/image";
-import BrandsCollection from "@/components/globals/BrandsCollection";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import HeroCarousel from '@/components/globals/HeroCarousel';
-import { getTireSizesForSearch, getCarDataForSearch } from "@/actions";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
+import { Search, CopyIcon, Package, MapPin, Calendar, Phone, Mail, Wallet } from "lucide-react";
+import { getOrderForTracking } from "@/actions";
+import { OrderWithOrderItem } from "@/types";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import { toast } from "sonner";
+import Image from "next/image";
+import { Badge } from "@/components/ui/badge";
 
-const Page = async () => {
-  // Fetch tire search data from database
-  const [tireSizesResult, carDataResult] = await Promise.all([
-    getTireSizesForSearch(),
-    getCarDataForSearch(),
-  ]);
+const Page = () => {
+  const [orderId, setOrderId] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [order, setOrder] = React.useState<OrderWithOrderItem | null>(null);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState("");
 
-  const searchBySize = tireSizesResult.data || {};
-  const searchByCar = carDataResult.data || [];
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!orderId.trim() || !email.trim()) {
+      setError("Please enter both Order ID and Email");
+      return;
+    }
+
+    setIsLoading(true);
+    setError("");
+    setOrder(null);
+
+    try {
+      const result = await getOrderForTracking(orderId.trim(), email.trim());
+
+      if (result.error) {
+        setError(result.error);
+      } else if (result.data) {
+        setOrder(result.data);
+      }
+    } catch (err) {
+      setError("Failed to fetch order. Please try again.");
+      console.error("Error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success("Copied to clipboard");
+  };
+
+  const getOrderSteps = () => {
+    if (!order) return [];
+
+    const baseSteps = [
+      {
+        id: "pending",
+        label: "Pending",
+        image:
+          "https://angular.pixelstrap.com/multikart-admin/assets/svg/tracking/pending.svg",
+        date: order.createdAt,
+        status: "PENDING",
+      },
+      {
+        id: "processing",
+        label: "Processing",
+        image:
+          "https://angular.pixelstrap.com/multikart-admin/assets/svg/tracking/processing.svg",
+        date: order.processingAt || undefined,
+        status: "PROCESSING",
+      },
+    ];
+
+    if (order.orderOption === "delivery") {
+      return [
+        ...baseSteps,
+        {
+          id: "shipped",
+          label: "Shipped",
+          image:
+            "https://angular.pixelstrap.com/multikart-admin/assets/svg/tracking/out-for-delivery.svg",
+          date: order.shippedAt || undefined,
+          status: "SHIPPED",
+        },
+        {
+          id: "completed",
+          label: "Completed",
+          image:
+            "https://angular.pixelstrap.com/multikart-admin/assets/svg/tracking/delivered.svg",
+          date: order.completedAt || undefined,
+          status: "COMPLETED",
+        },
+      ];
+    } else {
+      return [
+        ...baseSteps,
+        {
+          id: "completed",
+          label: "Completed",
+          image:
+            "https://angular.pixelstrap.com/multikart-admin/assets/svg/tracking/delivered.svg",
+          date: order.completedAt || undefined,
+          status: "COMPLETED",
+        },
+      ];
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "COMPLETED":
+        return "bg-green-600";
+      case "SHIPPED":
+        return "bg-orange-600";
+      case "PROCESSING":
+        return "bg-blue-600";
+      case "CANCELLED":
+        return "bg-red-600";
+      default:
+        return "bg-yellow-600";
+    }
+  };
+
+  const getPaymentStatusColor = (status: string) => {
+    switch (status) {
+      case "PAID":
+        return "bg-green-600";
+      case "FAILED":
+        return "bg-red-600";
+      default:
+        return "bg-yellow-600";
+    }
+  };
+
   return (
-    <div className="min-h-screen">
-      <div className="bg-hero w-full flex flex-col items-start justify-end py-20 h-[80vh]">
-        <div className="px-40 flex w-full items-center justify-between mb-10">
-          <h3 className="text-white font-semibold text-5xl italic tracking-tight leading-relaxed">
-            FIND THE INNOVATIVE TIRE <br />
-            <span className="font-black">YOU NEED</span>
-          </h3>
-        </div>
-        <div className="flex w-full px-40 items-start justify-between">
-          <HeroCarousel />
-          <TireSearch searchBySize={searchBySize} searchByCar={searchByCar} />
-        </div>
-      </div>
-      <section className="pt-10 bg-[#f5f5f5] pb-10">
-        <h3 className="text-primary text-center text-4xl font-bold tracking-tight">
-          Top Tire Brands
-        </h3>
-        <p className="text-primary text-2xl mt-2 text-center">
-          from our extensive collection
-        </p>
-        <BrandsCollection />
-      </section>
-      <section className="border-y shadow bg-white">
-        <div className="flex flex-col items-center justify-center max-w-7xl mx-auto py-10">
-          <h3 className="text-primary text-center text-4xl font-bold tracking-tight">
-            Tires for your car
-          </h3>
-          <p className="text-primary text-2xl mt-2 text-center">
-            browse popular tires for your car
+    <div className="min-h-screen bg-[#f5f5f5] pt-36 pb-10">
+      <div className="px-40 mt-5 sm:px-6 lg:px-8">
+        <div className="text-center mb-10">
+          <h1 className="text-4xl font-bold tracking-tight mb-4">Track Your Order</h1>
+          <p className="text-muted-foreground">
+            Enter your order ID and email address to track your order status
           </p>
-          <div className="relative w-full mt-5 h-[30vh]">
-            <Image
-              src="https://gogulong.ph/_nuxt/img/featured-car-models-desktop.570f354.webp"
-              alt="Tire for your car"
-              fill
-              className="object-contain size-full"
-            />
-          </div>
-          <Link href="/car-models">
-            <Button size="lg" className="mx-auto mt-5 text-center">
-              View Car Models
+        </div>
+
+        {/* Search Form */}
+        <Card className="p-6 mb-8">
+          <form onSubmit={handleSearch} className="space-y-4">
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="orderId">Order ID</Label>
+                <Input
+                  id="orderId"
+                  value={orderId}
+                  onChange={(e) => setOrderId(e.target.value)}
+                  placeholder="Enter your order ID"
+                  disabled={isLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email Address</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter your email address"
+                  disabled={isLoading}
+                />
+              </div>
+            </div>
+            <Button type="submit" disabled={isLoading} className="w-full md:w-auto">
+              <Search className="h-4 w-4 mr-2" />
+              {isLoading ? "Searching..." : "Track Order"}
             </Button>
-          </Link>
-        </div>
-      </section>
-      <section className="pt-10 pb-10 flex flex-col items-center justify-center bg-[#f5f5f5]">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-center gap-x-5">
-          <div className="relative w-52 h-32">
-            <Image
-              src="https://gogulong.ph/_nuxt/img/payment-channel-mastercard.d5375a5.png"
-              alt="Mastercard"
-              fill
-              className="size-full object-contain"
-            />
+          </form>
+          {error && (
+            <div className="mt-4 p-4 bg-destructive/10 text-destructive rounded-md">
+              {error}
+            </div>
+          )}
+        </Card>
+
+        {/* Order Details */}
+        {order && (
+          <div className="grid lg:grid-cols-10 gap-6">
+            {/* Left Column - Order Status & Items */}
+            <div className="lg:col-span-7 space-y-6">
+              {/* Order Status Timeline */}
+              <Card className="p-6">
+                <h2 className="text-xl font-bold mb-6">Order Status</h2>
+                <div
+                  className={`grid ${
+                    order.orderOption === "delivery" ? "lg:grid-cols-4" : "lg:grid-cols-3"
+                  } grid-cols-1 gap-10`}
+                >
+                  {getOrderSteps().map((step, index) => {
+                    const currentStatusIndex = getOrderSteps().findIndex(
+                      (s) => s.status === order.status
+                    );
+                    const isActive = index <= currentStatusIndex;
+
+                    return (
+                      <div
+                        key={step.id}
+                        className={`flex w-full relative tracking-panel gap-4 items-center ${
+							isActive ? "bg-[#f7e2e2] active" : "bg-zinc-100"
+						  }`}
+                      >
+                        <div className="relative size-10">
+                          <Image
+                            src={step.image}
+                            alt={step.label}
+                            fill
+                            className={`size-full ${isActive ? "text-primary" : "text-gray-400"}`}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <p
+                            className={`text-base font-semibold ${isActive ? "text-primary" : "text-gray-600"}`}
+                          >
+                            {step.label}
+                          </p>
+                          {step.date && (
+                            <p className="text-sm text-muted-foreground">
+                              {formatDate(step.date)}
+                            </p>
+                          )}
+                          {!step.date && isActive && (
+                            <p className="text-sm text-muted-foreground">Pending</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+
+              {/* Order Items */}
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold">Order Items</h2>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Order #{order.id}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleCopy(order.id)}
+                      className="h-8 w-8"
+                    >
+                      <CopyIcon className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-3 px-4 text-sm font-medium">Image</th>
+                        <th className="text-left py-3 px-4 text-sm font-medium">Name</th>
+                        <th className="text-left py-3 px-4 text-sm font-medium">Unit Price</th>
+                        <th className="text-left py-3 px-4 text-sm font-medium">Quantity</th>
+                        <th className="text-left py-3 px-4 text-sm font-medium">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {order.orderItem.map((item) => (
+                        <tr key={item.id} className="border-b">
+                          <td className="py-4 px-4">
+                            <div className="relative w-16 h-16">
+                              <Image
+                                src={item.product.images[0]}
+                                alt={item.product.name}
+                                fill
+                                className="object-cover rounded"
+                              />
+                            </div>
+                          </td>
+                          <td className="py-4 px-4">
+                            <div>
+                              <p className="font-medium">{item.product.name}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {item.product.brand.name}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="py-4 px-4">₱{formatCurrency(item.price)}</td>
+                          <td className="py-4 px-4">x{item.quantity}</td>
+                          <td className="py-4 px-4 font-medium">
+                            ₱{formatCurrency(item.price * item.quantity)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+
+            {/* Right Column - Summary & Customer Info */}
+            <div className="lg:col-span-3 space-y-6">
+              {/* Order Summary */}
+              <Card className="p-6">
+                <h3 className="text-lg font-bold mb-4">Order Summary</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="font-medium">
+                      ₱
+                      {formatCurrency(
+                        order.orderItem.reduce(
+                          (acc, item) => acc + item.price * item.quantity,
+                          0
+                        )
+                      )}
+                    </span>
+                  </div>
+                  {order.discountedAmount && order.discountedAmount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Discount</span>
+                      <span className="font-medium text-green-600">
+                        -₱{formatCurrency(order.discountedAmount)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="border-t pt-3 flex justify-between">
+                    <span className="font-bold">Total</span>
+                    <span className="font-bold text-lg">₱{formatCurrency(order.totalAmount)}</span>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Customer Details */}
+              <Card className="p-6">
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                  <Package className="h-5 w-5" />
+                  Order Details
+                </h3>
+                <div className="space-y-4 text-sm">
+                  <div className="flex items-start gap-3">
+                    <Calendar className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <div>
+                      <span className="text-muted-foreground block mb-1">Order Date</span>
+                      <span className="font-medium">{formatDate(order.createdAt)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <Calendar className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <div>
+                      <span className="text-muted-foreground block mb-1">Preferred Date</span>
+                      <span className="font-medium">{formatDate(order.preferredDate)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <div>
+                      <span className="text-muted-foreground block mb-1">Order Option</span>
+                      <span className="font-medium capitalize">{order.orderOption}</span>
+                    </div>
+                  </div>
+				  <div className="flex items-start gap-3">
+                    <Wallet className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <div>
+                      <span className="text-muted-foreground block mb-1">Payment Status</span>
+                      <span className="font-medium capitalize">{order.paymentStatus.toLowerCase()}</span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Customer Information */}
+              <Card className="p-6">
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                  <Mail className="h-5 w-5" />
+                  Customer Information
+                </h3>
+                <div className="space-y-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground block mb-1">Name</span>
+                    <span className="font-medium">{order.name}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block mb-1">Email</span>
+                    <span className="font-medium">{order.email}</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Phone className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <div>
+                      <span className="text-muted-foreground block mb-1">Phone</span>
+                      <span className="font-medium">{order.phoneNumber}</span>
+                    </div>
+                  </div>
+                  {order.remarks && (
+                    <div>
+                      <span className="text-muted-foreground block mb-1">Remarks</span>
+                      <span className="font-medium">{order.remarks}</span>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </div>
           </div>
-          <div className="relative w-52 h-32">
-            <Image
-              src="https://gogulong.ph/_nuxt/img/payment-channel-visa.f4afbce.png"
-              alt="Visa"
-              fill
-              className="size-full object-contain"
-            />
-          </div>
-          <div className="relative w-52 h-32">
-            <Image
-              src="https://gogulong.ph/_nuxt/img/payment-channel-gcash.32ec8a6.png"
-              alt="Gcash"
-              fill
-              className="size-full object-contain"
-            />
-          </div>
-          <div className="relative w-52 h-32">
-            <Image
-              src="https://gogulong.ph/_nuxt/img/payment-channel-bpi.f323e87.png"
-              alt="BPI"
-              fill
-              className="size-full object-contain"
-            />
-          </div>
-          <div className="relative w-52 h-32">
-            <Image
-              src="https://gogulong.ph/_nuxt/img/payment-channel-chinabank.875cf1a.png"
-              alt="China Bank"
-              fill
-              className="size-full object-contain"
-            />
-          </div>
-          <div className="relative w-52 h-32">
-            <Image
-              src="https://gogulong.ph/_nuxt/img/payment-channel-union-bank.44fa4b0.png"
-              alt="Union Bank"
-              fill
-              className="size-full object-contain"
-            />
-          </div>
-          <div className="relative w-52 h-32">
-            <Image
-              src="https://gogulong.ph/_nuxt/img/payment-channel-metrobank.7f4e395.png"
-              alt="Metrobank"
-              fill
-              className="size-full object-contain"
-            />
-          </div>
-          <div className="relative w-52 h-32">
-            <Image
-              src="https://gogulong.ph/_nuxt/img/payment-channel-landbank.fdad9c1.png"
-              alt="Landbank"
-              fill
-              className="size-full object-contain"
-            />
-          </div>
-          <div className="relative w-52 h-32">
-            <Image
-              src="https://gogulong.ph/_nuxt/img/payment-channel-bayad-center.cc8fe22.png"
-              alt="Bayad Center"
-              fill
-              className="size-full object-contain"
-            />
-          </div>
-        </div>
-      </section>
-      <section className="pt-10 flex flex-col items-center justify-center bg-white">
-        <h3 className="text-primary text-center text-4xl font-bold tracking-tight">
-          Tire Installation Site
-        </h3>
-        <p className="text-primary text-2xl mt-2 text-center">
-          locate a tire installation site near you
-        </p>
-        <iframe
-          className="mt-5"
-          src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3860.86713495341!2d121.02337022578162!3d14.606643676927291!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3397b7aa6dda4927%3A0x2d119ff5fd2d4d92!2s202%20Mags%20and%20Tires!5e0!3m2!1sen!2sph!4v1757572717505!5m2!1sen!2sph"
-          width="100%"
-          height="500"
-          allowFullScreen
-          loading="lazy"
-          referrerPolicy="no-referrer-when-downgrade"
-        ></iframe>
-      </section>
-      <section className="border-y shadow bg-white">
-        <div className="flex flex-col items-center justify-center max-w-7xl mx-auto py-10">
-          <div className="relative w-full h-20">
-            <Image
-              src="/logo.png"
-              alt="Logo"
-              fill
-              className="object-contain size-full"
-            />
-          </div>
-          <h3 className="text-primary text-center text-4xl font-bold tracking-tight">
-            ABOUT US
-          </h3>
-          <p className="mt-5">
-            202 Mags and Tires was established three years ago with a simple
-            vision of providing quality wheels and tires to car owners. What
-            started as a small online post on the marketplace quickly gained the
-            trust of customers. Through hard work, dedication, and passion for
-            cars, the business grew steadily.
-            <br /> <br />
-            From selling online, we were able to open our very own physical
-            store to serve more people. Our goal has always been to offer
-            reliable products at affordable prices. We make sure every customer
-            receives the best service and advice for their car needs. Today, 202
-            Mags and Tires continues to grow as a trusted name in the community.
-          </p>
-          <Button size="lg" className="mx-auto mt-5 text-center">
-            Learn more
-          </Button>
-        </div>
-      </section>
+        )}
+      </div>
     </div>
   );
 };
