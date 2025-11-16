@@ -22,6 +22,8 @@ const navMain = [
   { title: "FAQs", url: "/admin/faqs" },
   { title: "Policies", url: "/admin/policies" },
   { title: "Staff Management", url: "/admin/staff-management" },
+  { title: "Backup & Restore", url: "/admin/backup-recovery" },
+  { title: "Car Management", url: "/admin/car-management" },
 ];
 
 export function SiteHeader() {
