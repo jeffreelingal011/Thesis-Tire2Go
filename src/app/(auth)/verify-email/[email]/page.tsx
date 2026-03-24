@@ -55,7 +55,7 @@ const Page = () => {
         code,
       });
       // If verification was completed, set the session to active
-      // and redirect the user
+      // and redirect the user based on userType
       if (signUpAttempt.status === "complete") {
         await setActive({ session: signUpAttempt.createdSessionId });
         // ✅ mark user verified in DB
@@ -64,7 +64,27 @@ const Page = () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: formattedEmail, authId: signUpAttempt.createdUserId }), // or Clerk userId
         });
-        router.replace("/");
+
+        // Check user type and redirect accordingly
+        try {
+          const typeResponse = await fetch("/api/user/check-type");
+          const typeData = await typeResponse.json();
+
+          if (typeData.success) {
+            if (typeData.userType === "ADMIN") {
+              router.replace("/admin/dashboard");
+            } else if (typeData.userType === "OWNER") {
+              router.replace("/owner/dashboard");
+            } else {
+              router.replace("/");
+            }
+          } else {
+            router.replace("/");
+          }
+        } catch (err) {
+          console.error("Error checking user type:", err);
+          router.replace("/");
+        }
       } else {
         // If the status is not complete, check why. User may need to
         // complete further steps.
@@ -96,20 +116,20 @@ const Page = () => {
     }
   };
   return (
-    <div className="min-h-screen flex w-full flex-col items-center bg-[#f5f5f5]">
-      <div className="pt-50 max-w-3xl mx-auto w-full">
-        <div className="bg-primary rounded-tl-md rounded-tr-md py-3 px-3 w-full">
-          <h3 className="text-white w-full text-2xl font-bold tracking-tight">
+    <div className="min-h-screen flex w-full flex-col items-center bg-[#f5f5f5] pt-20 sm:pt-24 lg:pt-32 pb-8 sm:pb-10">
+      <div className="px-4 sm:px-6 max-w-3xl mx-auto w-full">
+        <div className="bg-primary rounded-tl-md rounded-tr-md py-3 sm:py-4 px-4 sm:px-6 w-full">
+          <h3 className="text-white w-full text-xl sm:text-2xl font-bold tracking-tight">
             Complete your email verification
           </h3>
         </div>
-        <div className="bg-white border shadow rounded-bl-md rounded-br-md py-3 px-3 w-full">
+        <div className="bg-white border shadow rounded-bl-md rounded-br-md py-4 sm:py-6 px-4 sm:px-6 w-full">
           <form
             onSubmit={handleSubmit}
-            className="mt-2 flex flex-col space-y-6 w-full items-center"
+            className="mt-2 flex flex-col space-y-4 sm:space-y-6 w-full items-center"
           >
             <div className="space-y-3 w-full">
-              <Label className="block text-center">OTP Code</Label>
+              <Label className="block text-center text-sm sm:text-base">OTP Code</Label>
 
               {/* CENTERING WRAPPER */}
               <div className="w-full flex justify-center">
@@ -119,16 +139,16 @@ const Page = () => {
                   onChange={handleOtpChange}
                   maxLength={6}
                   pattern={REGEXP_ONLY_DIGITS_AND_CHARS}
-                  className="w-fit inline-flex items-center justify-center gap-3"
+                  className="w-fit inline-flex items-center justify-center gap-1 sm:gap-2 lg:gap-3"
                 >
                   <InputOTPGroup>
                     <InputOTPSlot
                       index={0}
-                      className="size-20 mx-2 text-center rounded-md border"
+                      className="size-12 sm:size-16 lg:size-20 mx-1 sm:mx-2 text-center rounded-md border text-lg sm:text-xl lg:text-2xl"
                     />
                     <InputOTPSlot
                       index={1}
-                      className="size-20 mx-2 text-center rounded-md border"
+                      className="size-12 sm:size-16 lg:size-20 mx-1 sm:mx-2 text-center rounded-md border text-lg sm:text-xl lg:text-2xl"
                     />
                   </InputOTPGroup>
 
@@ -137,11 +157,11 @@ const Page = () => {
                   <InputOTPGroup>
                     <InputOTPSlot
                       index={2}
-                      className="size-20 mx-2 text-center rounded-md border"
+                      className="size-12 sm:size-16 lg:size-20 mx-1 sm:mx-2 text-center rounded-md border text-lg sm:text-xl lg:text-2xl"
                     />
                     <InputOTPSlot
                       index={3}
-                      className="size-20 mx-2 text-center rounded-md border"
+                      className="size-12 sm:size-16 lg:size-20 mx-1 sm:mx-2 text-center rounded-md border text-lg sm:text-xl lg:text-2xl"
                     />
                   </InputOTPGroup>
 
@@ -150,11 +170,11 @@ const Page = () => {
                   <InputOTPGroup>
                     <InputOTPSlot
                       index={4}
-                      className="size-20 mx-2 text-center rounded-md border"
+                      className="size-12 sm:size-16 lg:size-20 mx-1 sm:mx-2 text-center rounded-md border text-lg sm:text-xl lg:text-2xl"
                     />
                     <InputOTPSlot
                       index={5}
-                      className="size-20 mx-2 text-center rounded-md border"
+                      className="size-12 sm:size-16 lg:size-20 mx-1 sm:mx-2 text-center rounded-md border text-lg sm:text-xl lg:text-2xl"
                     />
                   </InputOTPGroup>
                 </InputOTP>
@@ -163,11 +183,11 @@ const Page = () => {
             <Button
               disabled={!isLoaded || isLoading}
               type="submit"
-              className="w-full"
+              className="w-full text-sm sm:text-base"
             >
               Verify Email
             </Button>
-            <p className="text-center text-sm">
+            <p className="text-center text-xs sm:text-sm">
               Didn&apos;t receive the code?{" "}
               {timer > 0 ? (
                 <span className="text-gray-500">Resend in {timer}s</span>
@@ -189,3 +209,4 @@ const Page = () => {
 };
 
 export default Page;
+
