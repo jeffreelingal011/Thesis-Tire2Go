@@ -1,12 +1,17 @@
 import React from "react";
 import db from "@/lib/db";
 import Heading from "@/components/globals/Heading";
-import { DataTable } from "@/components/globals/DataTable";
-import { columns } from "./_components/columns";
 import OrdersTable from "./_components/orders-table";
 import { getArchivedOrdersCount, getOrdersToArchiveSoon } from "@/actions";
+import { unstable_noStore as noStore } from "next/cache";
+
+// Force dynamic rendering to prevent caching
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const Page = async () => {
+  // Prevent static caching
+  noStore();
   // Get active (non-archived) orders
   const activeOrders = await db.order.findMany({
     where: {
@@ -44,7 +49,7 @@ const Page = async () => {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center flex-wrap gap-3 justify-between">
         <Heading
           title="Manage Orders"
           description="Browse and manage all orders in your store."
@@ -81,7 +86,6 @@ const Page = async () => {
         <OrdersTable
           activeOrders={activeOrders}
           archivedOrders={archivedOrders}
-          archivedCount={archivedCount}
         />
       </div>
     </div>
