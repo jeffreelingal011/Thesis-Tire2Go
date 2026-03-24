@@ -100,13 +100,21 @@ const OrderDetails = ({
       : orderStepsInstallation;
 
   const handleStatusChange = async (value: OrderStatus) => {
+    const previousStatus = orderStatus;
     setOrderStatus(value);
     setLoading(true);
 
-    await updateOrderStatus(initialData.id, value);
-    router.refresh();
-	toast.success("Order status updated");
-    setLoading(false);
+    try {
+      await updateOrderStatus(initialData.id, value);
+      router.refresh();
+      toast.success("Order status updated");
+    } catch (error) {
+      console.error("Error updating order status:", error);
+      setOrderStatus(previousStatus);
+      toast.error("You don't have permission to update this order.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -260,30 +268,38 @@ const OrderDetails = ({
             <h3 className="text-base font-bold text-black mb-4">Summary</h3>
             {/* Summary Details */}
             <div className="space-y-3 mb-6">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Subtotal</span>
-                <span className="font-medium text-gray-900">
-                  ₱
-                  {formatCurrency(
-                    initialData.orderItem.reduce(
-                      (acc, item) => acc + item.price * item.quantity,
-                      0
-                    )
-                  )}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Discount</span>
-                <span className="font-medium text-gray-900">
-                  ₱{formatCurrency(initialData.discountedAmount ?? 0)}
-                </span>
-              </div>
-              <div className="border-t border-gray-200 pt-3 flex justify-between">
-                <span className="font-medium text-gray-900">Total</span>
-                <span className="font-bold text-lg text-gray-900">
-                  ₱{formatCurrency(initialData.totalAmount)}
-                </span>
-              </div>
+              {(() => {
+                const subtotal = initialData.orderItem.reduce(
+                  (acc, item) => acc + item.price * item.quantity,
+                  0
+                );
+                const discount = initialData.discountedAmount ?? 0;
+                const total = subtotal - discount;
+                return (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Subtotal</span>
+                      <span className="font-medium text-gray-900">
+                        ₱{formatCurrency(subtotal)}
+                      </span>
+                    </div>
+                    {discount > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Discount</span>
+                        <span className="font-medium text-green-600">
+                          -₱{formatCurrency(discount)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="border-t border-gray-200 pt-3 flex justify-between">
+                      <span className="font-medium text-gray-900">Total</span>
+                      <span className="font-bold text-lg text-gray-900">
+                        ₱{formatCurrency(total)}
+                      </span>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
             <h3 className="text-base font-bold text-black mb-4">
               Customer Details
