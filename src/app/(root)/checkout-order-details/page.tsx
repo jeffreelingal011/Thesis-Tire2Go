@@ -51,14 +51,38 @@ const Page = () => {
   });
 
   // Handle phone number input - only numbers, max 10 digits
+  // Must start with 9 (not 0) after +63, then 8 more digits
   const handlePhoneChange = (value: string) => {
     // Remove all non-numeric characters
     const numericValue = value.replace(/\D/g, "");
 
     // Limit to 10 digits
-    const limitedValue = numericValue.slice(0, 10);
+    let limitedValue = numericValue.slice(0, 10);
+
+    // If the first digit is 0, replace it with 9 or remove it
+    if (limitedValue.length > 0 && limitedValue[0] === "0") {
+      // If user enters 0 as first digit, remove it or replace with 9
+      limitedValue = limitedValue.length > 1 ? limitedValue.slice(1) : "";
+    }
+
+    // Ensure first digit is 9 if value exists
+    if (limitedValue.length > 0 && limitedValue[0] !== "9") {
+      // If first digit is not 9, replace it with 9
+      limitedValue = "9" + limitedValue.slice(1);
+      // Limit to 10 digits after adding 9
+      limitedValue = limitedValue.slice(0, 10);
+    }
 
     setDetails({ ...details, phone: limitedValue });
+  };
+
+  // Handle input validation - only allow alphanumeric, spaces, and: .,!?()
+  const handleRestrictedInputChange = (field: "firstName" | "lastName" | "remarks", value: string) => {
+    // Only allow alphanumeric, spaces, and: .,!?()
+    const allowedPattern = /^[a-zA-Z0-9\s.,!?()]*$/;
+    if (allowedPattern.test(value)) {
+      setDetails({ ...details, [field]: value });
+    }
   };
 
   // Format phone number for display: (+63) XXXXXXXXXX
@@ -75,6 +99,9 @@ const Page = () => {
 
   // Email validation state
   const [emailError, setEmailError] = React.useState<string>("");
+
+  // Preferred schedule validation state
+  const [scheduleError, setScheduleError] = React.useState<string>("");
 
   // Policy modal states
   const [isTermsOpen, setIsTermsOpen] = React.useState(false);
@@ -95,6 +122,14 @@ const Page = () => {
   }
 
   const handleContinue = () => {
+    // Validate preferred schedule is selected
+    if (!preferredSchedule) {
+      setScheduleError("Please select a preferred schedule date.");
+      toast.error("Please select a preferred schedule date before continuing.");
+      return;
+    }
+    setScheduleError(""); // Clear error if valid
+
     if (!details.acceptedTerms) {
       toast.error(
         "You must accept the terms and conditions before continuing."
@@ -121,9 +156,15 @@ const Page = () => {
     }
     setEmailError(""); // Clear error if valid
 
-    // Validate phone number length
+    // Validate phone number length and format
     if (details.phone.length !== 10) {
       toast.error("Phone number must be exactly 10 digits.");
+      return;
+    }
+
+    // Validate that phone number starts with 9 (not 0)
+    if (details.phone[0] !== "9") {
+      toast.error("Phone number must start with 9 after +63 (e.g., +639123456789).");
       return;
     }
 
@@ -137,18 +178,37 @@ const Page = () => {
     router.push("/checkout-review");
   };
 
-  const item = items[0]; // since you allow only one product
-  const srpPrice = item.unitPrice;
-  const srpTotal = item.unitPrice * item.quantity;
-  const discountedTotal =
-    (item.discountedPrice ?? item.unitPrice) * item.quantity;
-  const discountAmount = srpTotal - discountedTotal;
+  // Calculate totals for all items
+  const calculateTotals = () => {
+    let totalSrp = 0;
+    let totalDiscounted = 0;
+
+    items.forEach((item) => {
+      const srp = item.unitPrice * item.quantity;
+      const effectivePrice = (item.discountedPrice && item.discountedPrice > 0)
+        ? item.discountedPrice
+        : item.unitPrice;
+      const discounted = effectivePrice * item.quantity;
+
+      totalSrp += srp;
+      totalDiscounted += discounted;
+    });
+
+    return {
+      totalSrp,
+      totalDiscounted,
+      totalDiscount: totalSrp - totalDiscounted,
+      totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
+    };
+  };
+
+  const totals = calculateTotals();
 
   return (
     <div className="min-h-screen">
       {/* Breadcrumbs */}
       <div
-        className="w-full pt-30 h-[20vh] flex items-center justify-center bg-cover bg-center"
+        className="w-full pt-30 lg:h-[20vh] h-[23vh] flex items-center justify-center bg-cover bg-center"
         style={{
           backgroundImage:
             "url('https://gogulong.ph/_nuxt/img/breadcrumbs-bg.f31fb0b.png')",
@@ -159,14 +219,14 @@ const Page = () => {
           <div className="bg-primary size-5 rounded-full flex items-center justify-center text-white text-xs font-medium">
             ✓
           </div>
-          <h3 className="text-primary font-semibold text-center">CART</h3>
+          <h3 className="text-primary font-semibold lg:block hidden text-center lg:text-base text-sm">CART</h3>
         </div>
         <ChevronRight className="size-4 text-white mx-5" />
         <div className="flex items-center gap-2">
           <div className="bg-primary size-5 rounded-full flex items-center justify-center text-white text-xs font-medium">
             2
           </div>
-          <h3 className="text-primary font-semibold text-center">
+          <h3 className="text-primary lg:block hidden font-semibold lg:text-base text-sm text-center">
             ORDER DETAILS
           </h3>
         </div>
@@ -175,19 +235,19 @@ const Page = () => {
           <div className="bg-white size-5 rounded-full flex items-center justify-center text-primary text-xs font-medium">
             3
           </div>
-          <h3 className="text-white font-semibold text-center">REVIEW</h3>
+          <h3 className="text-white font-semibold lg:block hidden lg:text-base text-sm text-center">REVIEW</h3>
         </div>
         <ChevronRight className="size-4 text-white mx-5" />
         <div className="flex items-center gap-2">
           <div className="bg-white size-5 rounded-full flex items-center justify-center text-primary text-xs font-medium">
             4
           </div>
-          <h3 className="text-white font-semibold text-center">COMPLETED</h3>
+          <h3 className="text-white font-semibold lg:block hidden lg:text-base text-sm text-center">COMPLETED</h3>
         </div>
       </div>
 
       {/* Main Section */}
-      <section className="pt-5 px-34 pb-10">
+      <section className="pt-5 lg:px-34 px-5 pb-10">
         <div className="grid items-stretch lg:grid-cols-5 grid-cols-1">
           {/* Order Details */}
           <div className="lg:col-span-3 h-full flex flex-col">
@@ -199,13 +259,17 @@ const Page = () => {
                 {/* Preferred Schedule */}
                 <div className="space-y-2">
                   <h3 className="text-primary font-medium">
-                    Preferred schedule details
+                    Preferred schedule details <span className="text-destructive">*</span>
                   </h3>
                   <DatePicker
                     value={preferredSchedule ?? undefined}
-                    onChange={(date?: Date) =>
-                      setPreferredSchedule(date ?? null)
-                    }
+                    onChange={(date?: Date) => {
+                      setPreferredSchedule(date ?? null);
+                      // Clear error when user selects a date
+                      if (date) {
+                        setScheduleError("");
+                      }
+                    }}
                     fromDate={minDate}
                     descriptionText={
                       preferredSchedule
@@ -215,6 +279,9 @@ const Page = () => {
                         : "Select your preferred date for tire delivery or installation (today or later, 2025 and onwards)."
                     }
                   />
+                  {scheduleError && (
+                    <p className="text-sm text-destructive">{scheduleError}</p>
+                  )}
                 </div>
 
                 <Separator />
@@ -231,7 +298,7 @@ const Page = () => {
                       <Input
                         value={details.firstName}
                         onChange={(e) =>
-                          setDetails({ ...details, firstName: e.target.value })
+                          handleRestrictedInputChange("firstName", e.target.value)
                         }
                         required
                         placeholder="Enter your first name"
@@ -244,7 +311,7 @@ const Page = () => {
                       <Input
                         value={details.lastName}
                         onChange={(e) =>
-                          setDetails({ ...details, lastName: e.target.value })
+                          handleRestrictedInputChange("lastName", e.target.value)
                         }
                         required
                         placeholder="Enter your last name"
@@ -315,10 +382,13 @@ const Page = () => {
                     <Textarea
                       value={details.remarks}
                       onChange={(e) =>
-                        setDetails({ ...details, remarks: e.target.value })
+                        handleRestrictedInputChange("remarks", e.target.value)
                       }
                       placeholder="Any additional information or requests"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Only letters, numbers, spaces, and these characters are allowed: . , ! ? ( )
+                    </p>
                   </div>
 
                   <div className="flex items-start mt-3 gap-3">
@@ -412,32 +482,28 @@ const Page = () => {
               </div>
               <div className="space-y-2 pb-5 px-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium text-base">SRP</h3>
-                  <h3 className="font-medium text-base">
-                    ₱{formatCurrency(srpPrice)}
+                  <h3 className="font-medium text-base">Subtotal</h3>
+                  <h3 className="font-medium text-base text-right">
+                    ₱ {formatCurrency(totals.totalSrp)}
                   </h3>
                 </div>
+                {totals.totalDiscount > 0 && (
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-medium text-base">Gross Discount</h3>
+                    <h3 className="font-medium text-base text-primary text-right">
+                      -₱ {formatCurrency(totals.totalDiscount)}
+                    </h3>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium text-base">Tire Discount</h3>
-                  <h3 className="font-medium text-base text-primary">
-                    (₱{formatCurrency(discountAmount)})
-                  </h3>
-                </div>
-                <div className="flex items-center justify-between">
-                  <h3 className="font-medium text-base">Discounted Price</h3>
-                  <h3 className="font-medium text-base">
-                    ₱{formatCurrency(discountedTotal)}
-                  </h3>
-                </div>
-                <div className="flex items-center justify-between">
-                  <h3 className="font-medium text-base">Quantity</h3>
-                  <h3 className="font-medium text-base">{item.quantity}</h3>
+                  <h3 className="font-medium text-base">Total Quantity</h3>
+                  <h3 className="font-medium text-base">{totals.totalQuantity} {totals.totalQuantity === 1 ? 'tire' : 'tires'}</h3>
                 </div>
                 <Separator />
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold text-lg">Total</h3>
-                  <h3 className="font-medium text-primary text-lg">
-                    ₱{formatCurrency(discountedTotal)}
+                  <h3 className="font-medium text-primary text-lg text-right">
+                    ₱ {formatCurrency(totals.totalDiscounted)}
                   </h3>
                 </div>
                 <p className="mt-3 text-sm text-gray-500">
