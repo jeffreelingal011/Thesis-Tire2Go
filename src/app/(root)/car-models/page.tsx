@@ -1,6 +1,7 @@
 import Image from "next/image";
 import React from "react";
 import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 const Page = () => {
   return (
@@ -14,14 +15,14 @@ const Page = () => {
       >
         <h3 className="text-white font-bold text-center">CAR MODELS</h3>
       </div>
-      <section className="pt-5 max-w-7xl mx-auto px-8 pb-10">
+      <section className="pt-5 max-w-7xl mx-auto lg:px-8 px-5 pb-10">
         <h3 className="text-primary font-bold text-xl text-center">
           Featured Car Models
         </h3>
         <h3 className="text-primary font-bold text-3xl mt-2 text-center">
           Browse Popular Tires For Your Car
         </h3>
-        <p className="mt-1 text-lg text-muted-foreground">
+        <p className="mt-2 text-lg text-muted-foreground">
           At Tyre2Go, we don’t just provide you tires by size; we also offer it
           based on car models. Here are some of our featured car models to find
           your tires:
@@ -44,12 +45,12 @@ const Page = () => {
             {/* Text + Button at Bottom */}
             <div className="absolute bottom-0 left-0 right-0 p-4 flex items-center justify-between">
               <h3 className="font-semibold text-gray-900">Hyundai Elantra</h3>
-              <Button>
-                View Tires
-              </Button>
+              <Link href="/car-models/HYUNDAI/ELANTRA">
+                <Button>View Tires</Button>
+              </Link>
             </div>
           </div>
-		  {/* Card */}
+          {/* Card */}
           <div className="relative w-full h-[300px] rounded-md overflow-hidden shadow border">
             {/* Background Image */}
             <Image
@@ -65,12 +66,12 @@ const Page = () => {
             {/* Text + Button at Bottom */}
             <div className="absolute bottom-0 left-0 right-0 p-4 flex items-center justify-between">
               <h3 className="font-semibold text-gray-900">Toyota Avanza</h3>
-              <Button>
-                View Tires
-              </Button>
+              <Link href="/car-models/TOYOTA/AVANZA">
+                <Button>View Tires</Button>
+              </Link>
             </div>
           </div>
-		  {/* Card */}
+          {/* Card */}
           <div className="relative w-full h-[300px] rounded-md overflow-hidden shadow border">
             {/* Background Image */}
             <Image
@@ -85,13 +86,15 @@ const Page = () => {
 
             {/* Text + Button at Bottom */}
             <div className="absolute bottom-0 left-0 right-0 p-4 flex items-center justify-between">
-              <h3 className="font-semibold capitalize text-gray-900">MITSUBISHI XPANDER</h3>
-              <Button>
-                View Tires
-              </Button>
+              <h3 className="font-semibold capitalize text-gray-900">
+                MITSUBISHI XPANDER
+              </h3>
+              <Link href="/car-models/MITSUBISHI/XPANDER">
+                <Button>View Tires</Button>
+              </Link>
             </div>
           </div>
-		  {/* Card */}
+          {/* Card */}
           <div className="relative w-full h-[300px] rounded-md overflow-hidden shadow border">
             {/* Background Image */}
             <Image
@@ -106,13 +109,15 @@ const Page = () => {
 
             {/* Text + Button at Bottom */}
             <div className="absolute bottom-0 left-0 right-0 p-4 flex items-center justify-between">
-              <h3 className="font-semibold capitalize text-gray-900">FORD RAPTOR</h3>
-              <Button>
-                View Tires
-              </Button>
+              <h3 className="font-semibold capitalize text-gray-900">
+                FORD RAPTOR
+              </h3>
+              <Link href="/car-models/FORD/RAPTOR">
+                <Button>View Tires</Button>
+              </Link>
             </div>
           </div>
-		  {/* Card */}
+          {/* Card */}
           <div className="relative w-full h-[300px] rounded-md overflow-hidden shadow border">
             {/* Background Image */}
             <Image
@@ -127,13 +132,15 @@ const Page = () => {
 
             {/* Text + Button at Bottom */}
             <div className="absolute bottom-0 left-0 right-0 p-4 flex items-center justify-between">
-              <h3 className="font-semibold capitalize text-gray-900">NISSAN NAVARA</h3>
-              <Button>
-                View Tires
-              </Button>
+              <h3 className="font-semibold capitalize text-gray-900">
+                NISSAN NAVARA
+              </h3>
+              <Link href="/car-models/NISSAN/NAVARA">
+                <Button>View Tires</Button>
+              </Link>
             </div>
           </div>
-		  {/* Card */}
+          {/* Card */}
           <div className="relative w-full h-[300px] rounded-md overflow-hidden shadow border">
             {/* Background Image */}
             <Image
@@ -148,10 +155,12 @@ const Page = () => {
 
             {/* Text + Button at Bottom */}
             <div className="absolute bottom-0 left-0 right-0 p-4 flex items-center justify-between">
-              <h3 className="font-semibold capitalize text-gray-900">HONDA CIVIC</h3>
-              <Button>
-                View Tires
-              </Button>
+              <h3 className="font-semibold capitalize text-gray-900">
+                HONDA CIVIC
+              </h3>
+              <Link href="/car-models/HONDA/CIVIC">
+                <Button>View Tires</Button>
+              </Link>
             </div>
           </div>
         </div>
