@@ -14,21 +14,84 @@ import {
   CarMakeValidators,
   CarModelValidators,
   TireSizeValidators,
+  FeedbackValidators,
+  ReviewValidators,
 } from "@/validators";
 import db from "@/lib/db";
 import { InventoryResponse, OrderWithOrderItem } from "@/types";
 import { getStockStatus } from "@/lib/utils";
 import { CartItem, CustomerDetails, DeliveryOption } from "@/hooks/use-cart";
-import { auth } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { OrderCompleteHTML } from "@/components/email-template/order-complete";
 import { sendMail } from "@/lib/nodemailer";
 import { OrderStatusEmailHTML } from "@/components/email-template/order-status";
 import { OrderRejectionEmailHTML } from "@/components/email-template/order-rejection";
+import { OrderCancellationEmailHTML } from "@/components/email-template/order-cancellation";
+import { revalidatePath } from "next/cache";
+import { checkAdminPermission } from "@/lib/admin-auth";
+import {
+  AdminPermissionAction,
+  AdminPermissionModule,
+} from "@/lib/admin-access";
+
+const ensureAdminPermission = async (
+  permissionModule: AdminPermissionModule,
+  action: AdminPermissionAction
+) => {
+  const permission = await checkAdminPermission(permissionModule, action);
+  if (!permission.allowed) {
+    return { error: permission.error };
+  }
+  return null;
+};
+
+const ensureAdminPermissionOrThrow = async (
+  permissionModule: AdminPermissionModule,
+  action: AdminPermissionAction
+) => {
+  const permissionError = await ensureAdminPermission(permissionModule, action);
+  if (permissionError) {
+    throw new Error(permissionError.error);
+  }
+};
+
+const generateSixDigitTrackingNumber = () =>
+  Math.floor(Math.random() * 1_000_000)
+    .toString()
+    .padStart(6, "0");
+
+const generateUniqueTrackingNumber = async () => {
+  // Retry to reduce collision risk for 6-digit codes.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const trackingNumber = generateSixDigitTrackingNumber();
+
+    const existingOrder = await db.order.findFirst({
+      where: { trackingNumber },
+      select: { id: true },
+    });
+
+    if (!existingOrder) {
+      return trackingNumber;
+    }
+  }
+
+  throw new Error("Unable to generate a unique tracking number");
+};
+
+const getTrackingReference = (order: {
+  id: string;
+  trackingNumber: string | null;
+}) => order.trackingNumber ?? order.id;
 
 export const createBrand = async (values: z.infer<typeof BrandValidators>) => {
   const parseValues = BrandValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("brands", "create");
+    if (permissionError) {
+      return permissionError;
+    }
+
     // Check if there is existing brand with the same name
     const existingBrand = await db.brands.findFirst({
       where: { name: parseValues.name },
@@ -56,6 +119,11 @@ export const updateBrand = async (
   const parseValues = BrandValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("brands", "update");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingBrand = await db.brands.findFirst({
       where: { id },
     });
@@ -88,6 +156,11 @@ export const updateBrand = async (
 
 export const deleteBrand = async (id: string) => {
   try {
+    const permissionError = await ensureAdminPermission("brands", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingBrand = await db.brands.findFirst({
       where: { id },
     });
@@ -112,6 +185,11 @@ export const createProduct = async (
   const parseValues = ProductValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("products", "create");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingProduct = await db.products.findFirst({
       where: { name: parseValues.name },
     });
@@ -180,6 +258,11 @@ export const updateProduct = async (
 ) => {
   const parseValues = ProductValidators.parse(values);
   try {
+    const permissionError = await ensureAdminPermission("products", "update");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingProduct = await db.products.findFirst({
       where: { id },
     });
@@ -267,6 +350,11 @@ export const updateProduct = async (
 
 export const deleteProduct = async (id: string) => {
   try {
+    const permissionError = await ensureAdminPermission("products", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingProduct = await db.products.findFirst({
       where: { id },
     });
@@ -314,6 +402,14 @@ export const createInventory = async (
   const parseValues = InventoryValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission(
+      "inventoryManagement",
+      "create"
+    );
+    if (permissionError) {
+      return permissionError;
+    }
+
     const product = await db.products.findFirst({
       where: { id: parseValues.productId },
     });
@@ -330,46 +426,19 @@ export const createInventory = async (
       return { error: "Inventory for this product already exists" };
     }
 
-    // check if the quantity is more than maxStock
-    if (
-      parseValues.maxStock !== undefined &&
-      parseValues.quantity > parseValues.maxStock
-    ) {
-      return { error: "Quantity cannot be more than max stock" };
-    }
-
-    // check if the quantity is less than minStock
-    if (parseValues.quantity < parseValues.minStock) {
-      return { error: "Quantity cannot be less than min stock" };
-    }
-
-    // check if the minStock is more than maxStock
-    if (
-      parseValues.maxStock !== undefined &&
-      parseValues.minStock > parseValues.maxStock
-    ) {
-      return { error: "Min stock cannot be more than max stock" };
-    }
-
-    // check if the minStock is less than 0
-    if (parseValues.minStock < 0) {
-      return { error: "Min stock cannot be less than 0" };
-    }
-
-    // check if the quantity is less than 0
-    if (parseValues.quantity < 0) {
-      return { error: "Quantity cannot be less than 0" };
-    }
+    // Allow negative quantities for critical stock tracking
+    // Critical stock status will be determined based on sales trends and usage
 
     const inventory = await db.inventory.create({
       data: {
         productId: parseValues.productId,
         quantity: parseValues.quantity,
-        minStock: parseValues.minStock,
-        maxStock: parseValues.maxStock,
         sku: parseValues.sku,
+        minStock: 0, // Default value - not used for critical stock determination
       },
     });
+
+    revalidatePath("/admin/inventory-management");
 
     return { success: "Inventory created successfully", inventory };
   } catch (error) {
@@ -384,6 +453,14 @@ export const updateInventory = async (
 ) => {
   const parseValues = InventoryValidators.parse(values);
   try {
+    const permissionError = await ensureAdminPermission(
+      "inventoryManagement",
+      "update"
+    );
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingInventory = await db.inventory.findFirst({
       where: { id },
     });
@@ -410,47 +487,21 @@ export const updateInventory = async (
       }
     }
 
-    // check if the quantity is more than maxStock
-    if (
-      parseValues.maxStock !== undefined &&
-      parseValues.quantity > parseValues.maxStock
-    ) {
-      return { error: "Quantity cannot be more than max stock" };
-    }
-
-    // check if the quantity is less than minStock
-    if (parseValues.quantity < parseValues.minStock) {
-      return { error: "Quantity cannot be less than min stock" };
-    }
-
-    // check if the minStock is more than maxStock
-    if (
-      parseValues.maxStock !== undefined &&
-      parseValues.minStock > parseValues.maxStock
-    ) {
-      return { error: "Min stock cannot be more than max stock" };
-    }
-
-    // check if the minStock is less than 0
-    if (parseValues.minStock < 0) {
-      return { error: "Min stock cannot be less than 0" };
-    }
-
-    // check if the quantity is less than 0
-    if (parseValues.quantity < 0) {
-      return { error: "Quantity cannot be less than 0" };
-    }
+    // Allow negative quantities for critical stock tracking
+    // Critical stock status will be determined based on sales trends and usage
 
     const updatedInventory = await db.inventory.update({
       where: { id },
       data: {
         productId: parseValues.productId,
         quantity: parseValues.quantity,
-        minStock: parseValues.minStock,
-        maxStock: parseValues.maxStock,
         sku: parseValues.sku,
+        // Status will be determined by sales trends and usage, not fixed thresholds
+        status: parseValues.quantity <= 0 ? "OUT_OF_STOCK" : "IN_STOCK",
       },
     });
+
+    revalidatePath("/admin/inventory-management");
 
     return {
       success: "Inventory updated successfully",
@@ -464,6 +515,14 @@ export const updateInventory = async (
 
 export const deleteInventory = async (id: string) => {
   try {
+    const permissionError = await ensureAdminPermission(
+      "inventoryManagement",
+      "delete"
+    );
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingInventory = await db.inventory.findFirst({
       where: { id },
     });
@@ -476,6 +535,8 @@ export const deleteInventory = async (id: string) => {
       where: { id },
     });
 
+    revalidatePath("/admin/inventory-management");
+
     return { success: "Inventory deleted successfully" };
   } catch (error) {
     console.error("Error deleting inventory:", error);
@@ -487,24 +548,24 @@ export const updateStockQuantity = async (
   id: string,
   quantity: number
 ): Promise<InventoryResponse> => {
+  await ensureAdminPermissionOrThrow("inventoryManagement", "update");
+
   const existingInventory = await db.inventory.findUnique({ where: { id } });
   if (!existingInventory) throw new Error("Inventory not found");
 
-  if (quantity < 0) throw new Error("Quantity cannot be less than 0");
-  if (
-    existingInventory.maxStock != null &&
-    quantity > existingInventory.maxStock
-  ) {
-    throw new Error("Quantity cannot be more than max stock");
-  }
+  // Allow negative quantities for critical stock tracking
+  // Critical stock status will be determined based on sales trends and usage
 
   const updatedInventory = await db.inventory.update({
     where: { id },
     data: {
       quantity,
-      status: getStockStatus(quantity, existingInventory.minStock),
+      // Status will be determined by sales trends and usage, not fixed thresholds
+      status: quantity <= 0 ? "OUT_OF_STOCK" : "IN_STOCK",
     },
   });
+
+  revalidatePath("/admin/inventory-management");
 
   return {
     success: "Stock updated successfully",
@@ -516,6 +577,8 @@ export const updateMinimumStock = async (
   id: string,
   minStock: number
 ): Promise<InventoryResponse> => {
+  await ensureAdminPermissionOrThrow("inventoryManagement", "update");
+
   const existingInventory = await db.inventory.findUnique({ where: { id } });
   if (!existingInventory) throw new Error("Inventory not found");
 
@@ -535,6 +598,8 @@ export const updateMinimumStock = async (
     },
   });
 
+  revalidatePath("/admin/inventory-management");
+
   return {
     success: "Minimum stock updated successfully",
     inventory: updatedInventory,
@@ -545,6 +610,8 @@ export const updateMaximumStock = async (
   id: string,
   maxStock: number
 ): Promise<InventoryResponse> => {
+  await ensureAdminPermissionOrThrow("inventoryManagement", "update");
+
   const existingInventory = await db.inventory.findUnique({ where: { id } });
   if (!existingInventory) throw new Error("Inventory not found");
 
@@ -567,6 +634,8 @@ export const updateMaximumStock = async (
     },
   });
 
+  revalidatePath("/admin/inventory-management");
+
   return {
     success: "Maximum stock updated successfully",
     inventory: updatedInventory,
@@ -579,6 +648,11 @@ export const createTipsGuides = async (
   const parseValues = TipsGuidesValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("tipsGuides", "create");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const tipsGuides = await db.tipsGuides.create({
       data: parseValues,
     });
@@ -597,6 +671,11 @@ export const updateTipsGuides = async (
   const parseValues = TipsGuidesValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("tipsGuides", "update");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingTipsGuides = await db.tipsGuides.findFirst({
       where: { id },
     });
@@ -622,6 +701,11 @@ export const updateTipsGuides = async (
 
 export const deleteTipsGuides = async (id: string) => {
   try {
+    const permissionError = await ensureAdminPermission("tipsGuides", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingTipsGuides = await db.tipsGuides.findFirst({
       where: { id },
     });
@@ -645,6 +729,11 @@ export const createFaqs = async (values: z.infer<typeof FaqsValidators>) => {
   const parseValues = FaqsValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("faqs", "create");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const faqs = await db.faqs.create({
       data: parseValues,
     });
@@ -663,6 +752,11 @@ export const updateFaqs = async (
   const parseValues = FaqsValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("faqs", "update");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingFaqs = await db.faqs.findFirst({
       where: { id },
     });
@@ -688,6 +782,11 @@ export const updateFaqs = async (
 
 export const deleteFaqs = async (id: string) => {
   try {
+    const permissionError = await ensureAdminPermission("faqs", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingFaqs = await db.faqs.findFirst({
       where: { id },
     });
@@ -711,6 +810,11 @@ export const createStaff = async (values: z.infer<typeof StaffValidators>) => {
   const parseValues = StaffValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("userManagement", "create");
+    if (permissionError) {
+      return permissionError;
+    }
+
     // Check if there is existing staff with the same email
     const existingStaff = await db.staff.findFirst({
       where: { email: parseValues.email },
@@ -738,6 +842,11 @@ export const updateStaff = async (
   const parseValues = StaffValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("userManagement", "update");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingStaff = await db.staff.findFirst({
       where: { id },
     });
@@ -770,6 +879,11 @@ export const updateStaff = async (
 
 export const deleteStaff = async (id: string) => {
   try {
+    const permissionError = await ensureAdminPermission("userManagement", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingStaff = await db.staff.findFirst({
       where: { id },
     });
@@ -795,6 +909,11 @@ export const createPolicy = async (
   const parseValues = PolicyValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("policies", "create");
+    if (permissionError) {
+      return permissionError;
+    }
+
     // Check if there is existing policy with the same type
     const existingPolicy = await db.policies.findFirst({
       where: { type: parseValues.type },
@@ -822,6 +941,11 @@ export const updatePolicy = async (
   const parseValues = PolicyValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("policies", "update");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingPolicy = await db.policies.findFirst({
       where: { id },
     });
@@ -853,6 +977,11 @@ export const updatePolicy = async (
 
 export const deletePolicy = async (id: string) => {
   try {
+    const permissionError = await ensureAdminPermission("policies", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingPolicy = await db.policies.findFirst({
       where: { id },
     });
@@ -896,6 +1025,11 @@ export const createPromotion = async (
   const parseValues = PromotionValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("promotions", "create");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const promotion = await db.promotions.create({
       data: parseValues,
     });
@@ -912,6 +1046,11 @@ export const updatePromotion = async (
 ) => {
   const parseValues = PromotionValidators.parse(values);
   try {
+    const permissionError = await ensureAdminPermission("promotions", "update");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingPromotion = await db.promotions.findFirst({
       where: { id },
     });
@@ -936,6 +1075,11 @@ export const updatePromotion = async (
 
 export const deletePromotion = async (id: string) => {
   try {
+    const permissionError = await ensureAdminPermission("promotions", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingPromotion = await db.promotions.findFirst({
       where: { id },
     });
@@ -978,6 +1122,9 @@ export const placeOrder = async (data: {
 
     const fullName = `${data.customerDetails.firstName} ${data.customerDetails.lastName}`;
 
+    // Generate a unique 6-digit tracking number.
+    const trackingNumber = await generateUniqueTrackingNumber();
+
     // Create order
     const response = await db.order.create({
       data: {
@@ -990,6 +1137,7 @@ export const placeOrder = async (data: {
         orderOption: data.deliveryOption,
         preferredDate: data.preferredSchedule || new Date(),
         remarks: data.customerDetails.remarks,
+        trackingNumber: trackingNumber,
       },
     });
 
@@ -1018,6 +1166,9 @@ export const placeOrder = async (data: {
       data.customerDetails.email
     );
 
+    revalidatePath("/");
+    revalidatePath("/admin/orders");
+
     return { success: "Order placed successfully", order: orderWithItems };
   } catch (error) {
     console.error("Error placing order:", error);
@@ -1030,6 +1181,7 @@ export const sendOrderCompletedEmail = async (
   email: string
 ) => {
   try {
+    const trackingReference = getTrackingReference(order);
     const htmlContent = await OrderCompleteHTML({
       order,
     });
@@ -1037,7 +1189,7 @@ export const sendOrderCompletedEmail = async (
     await sendMail(
       email,
       `Your order has been completed`,
-      `Your order "${order.id}" has been completed.`,
+      `Your order "${trackingReference}" has been completed.`,
       htmlContent
     );
 
@@ -1049,6 +1201,11 @@ export const sendOrderCompletedEmail = async (
 };
 
 export async function updateOrderStatus(orderId: string, status: string) {
+  const permissionError = await ensureAdminPermission("orders", "process");
+  if (permissionError) {
+    throw new Error(permissionError.error);
+  }
+
   const now = new Date();
 
   let updateData: any = { status };
@@ -1084,6 +1241,8 @@ export async function updateOrderStatus(orderId: string, status: string) {
   // ✅ send email notification
   await sendOrderStatusEmail(order, order.email);
 
+  revalidatePath("/admin/orders");
+
   return order;
 }
 
@@ -1092,6 +1251,7 @@ export const sendOrderStatusEmail = async (
   email: string
 ) => {
   try {
+    const trackingReference = getTrackingReference(order);
     const htmlContent = await OrderStatusEmailHTML({
       order,
     });
@@ -1099,7 +1259,7 @@ export const sendOrderStatusEmail = async (
     await sendMail(
       email,
       `Your order has been ${order.status}`,
-      `Your order "${order.id}" has been ${order.status}.`,
+      `Your order "${trackingReference}" has been ${order.status}.`,
       htmlContent
     );
 
@@ -1115,10 +1275,18 @@ export async function toggleOrderPayment(
   status: "PAID" | "FAILED"
 ) {
   try {
+    const permissionError = await ensureAdminPermission("orders", "update");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const order = await db.order.update({
       where: { id: orderId },
       data: { paymentStatus: status },
     });
+
+    revalidatePath("/admin/orders");
+    revalidatePath("/order-history");
 
     return { success: true, order };
   } catch (error) {
@@ -1129,6 +1297,11 @@ export async function toggleOrderPayment(
 
 export const deleteOrder = async (id: string) => {
   try {
+    const permissionError = await ensureAdminPermission("orders", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingOrder = await db.order.findFirst({
       where: { id },
     });
@@ -1145,6 +1318,9 @@ export const deleteOrder = async (id: string) => {
       where: { orderId: id },
     });
 
+    revalidatePath("/admin/orders");
+    revalidatePath("/order-history");
+
     return { success: "Order deleted successfully" };
   } catch (error) {
     console.error("Error deleting order:", error);
@@ -1155,10 +1331,16 @@ export const deleteOrder = async (id: string) => {
 // Archive orders manually (for admin use)
 export const archiveOrdersManually = async () => {
   try {
+    const permissionError = await ensureAdminPermission("orders", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
     // Import the function dynamically to avoid circular dependencies
     const cronModule = await import("@/lib/cron");
     if (typeof cronModule.archiveOldOrders === "function") {
       await cronModule.archiveOldOrders();
+      revalidatePath("/admin/orders");
       return { success: "Orders archived successfully" };
     } else {
       return { error: "Archive function not available" };
@@ -1172,6 +1354,11 @@ export const archiveOrdersManually = async () => {
 // Get archived orders count
 export const getArchivedOrdersCount = async () => {
   try {
+    const permissionError = await ensureAdminPermission("orders", "view");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const count = await db.order.count({
       where: {
         isArchived: true,
@@ -1188,6 +1375,11 @@ export const getArchivedOrdersCount = async () => {
 // Get orders that will be archived soon (within 7 days)
 export const getOrdersToArchiveSoon = async () => {
   try {
+    const permissionError = await ensureAdminPermission("orders", "view");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const sevenDaysFromNow = new Date();
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
 
@@ -1212,11 +1404,11 @@ export const getOrdersToArchiveSoon = async () => {
 };
 
 // Get order by ID and email for tracking (public access)
-export const getOrderForTracking = async (orderId: string, email: string) => {
+export const getOrderForTracking = async (orderTrackingNumber: string, email: string) => {
   try {
     const order = await db.order.findFirst({
       where: {
-        id: orderId,
+        trackingNumber: orderTrackingNumber.trim(),
         email: email.toLowerCase().trim(),
       },
       include: {
@@ -1234,7 +1426,7 @@ export const getOrderForTracking = async (orderId: string, email: string) => {
 
     if (!order) {
       return {
-        error: "Order not found. Please check your order ID and email.",
+        error: "Order not found. Please check your order tracking number and email address.",
       };
     }
 
@@ -1245,8 +1437,58 @@ export const getOrderForTracking = async (orderId: string, email: string) => {
   }
 };
 
+// Get all orders for the current logged-in user
+export const getUserOrders = async () => {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { error: "You must be logged in to view your orders" };
+    }
+
+    // Find user in database
+    const user = await db.users.findUnique({ where: { authId: userId } });
+
+    if (!user) {
+      return { error: "User not found" };
+    }
+
+    // Fetch all orders for this user
+    const orders = await db.order.findMany({
+      where: {
+        userId: user.id,
+        isArchived: false, // Only show active orders
+      },
+      orderBy: {
+        createdAt: "desc", // Most recent first
+      },
+      include: {
+        orderItem: {
+          include: {
+            product: {
+              include: {
+                brand: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return { success: "Orders fetched successfully", data: orders };
+  } catch (error) {
+    console.error("Error fetching user orders:", error);
+    return { error: "Failed to fetch orders. Please try again." };
+  }
+};
+
 export async function rejectOrder(orderId: string, reason: string) {
   try {
+    const permissionError = await ensureAdminPermission("orders", "process");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const order = await db.order.update({
       where: { id: orderId },
       data: {
@@ -1268,6 +1510,9 @@ export async function rejectOrder(orderId: string, reason: string) {
 
     await sendOrderRejectionEmail(order, order.email);
 
+    revalidatePath("/admin/orders");
+    revalidatePath("/order-history");
+
     return { success: true, order };
   } catch (error) {
     console.error(error);
@@ -1280,6 +1525,7 @@ export const sendOrderRejectionEmail = async (
   email: string
 ) => {
   try {
+    const trackingReference = getTrackingReference(order);
     const htmlContent = await OrderRejectionEmailHTML({
       order,
     });
@@ -1287,13 +1533,105 @@ export const sendOrderRejectionEmail = async (
     await sendMail(
       email,
       `Your order has been REJECTED`,
-      `Your order "${order.id}" has been rejected. Reason: ${order.reasonCancelled}`,
+      `Your order "${trackingReference}" has been rejected. Reason: ${order.reasonCancelled}`,
       htmlContent
     );
 
     return { success: "Email has been sent." };
   } catch (error) {
     console.error("Error sending product status email:", error);
+    return { message: "An error occurred. Please try again." };
+  }
+};
+
+export async function cancelOrder(orderId: string, reason: string) {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { error: "Unauthorized" };
+    }
+
+    // Find user in database
+    const user = await db.users.findUnique({
+      where: { authId: userId },
+    });
+
+    if (!user) {
+      return { error: "User not found" };
+    }
+
+    // Get the order and verify ownership and status
+    const order = await db.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      return { error: "Order not found" };
+    }
+
+    // Verify the order belongs to the current user
+    if (order.userId !== user.id) {
+      return { error: "Unauthorized - You can only cancel your own orders" };
+    }
+
+    // Only allow cancellation of PENDING orders
+    if (order.status !== "PENDING") {
+      return { error: "Only pending orders can be cancelled" };
+    }
+
+    // Update the order with cancellation details
+    const cancelledOrder = await db.order.update({
+      where: { id: orderId },
+      data: {
+        status: "CANCELLED",
+        reasonCancelled: reason,
+        cancelledAt: new Date(),
+      },
+      include: {
+        orderItem: {
+          include: {
+            product: {
+              include: { brand: true },
+            },
+          },
+        },
+      },
+    });
+
+    // Send cancellation confirmation email
+    await sendOrderCancellationEmail(cancelledOrder, order.email);
+
+    revalidatePath("/admin/orders");
+    revalidatePath("/order-history");
+
+    return { success: "Order cancelled successfully", order: cancelledOrder };
+  } catch (error) {
+    console.error("Error cancelling order:", error);
+    return { error: "Failed to cancel order" };
+  }
+}
+
+export const sendOrderCancellationEmail = async (
+  order: OrderWithOrderItem,
+  email: string
+) => {
+  try {
+    const trackingReference = getTrackingReference(order);
+    const htmlContent = await OrderCancellationEmailHTML({
+      order,
+    });
+
+    await sendMail(
+      email,
+      `Your order has been CANCELLED`,
+      `Your order "${trackingReference}" has been cancelled. Reason: ${order.reasonCancelled}`,
+      htmlContent
+    );
+
+    return { success: "Email has been sent." };
+  } catch (error) {
+    console.error("Error sending cancellation email:", error);
     return { message: "An error occurred. Please try again." };
   }
 };
@@ -1305,6 +1643,11 @@ export const createCarMake = async (
   const parseValues = CarMakeValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("carManagement", "create");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingCarMake = await db.carMake.findFirst({
       where: { name: parseValues.name },
     });
@@ -1331,6 +1674,11 @@ export const updateCarMake = async (
   const parseValues = CarMakeValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("carManagement", "update");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingCarMake = await db.carMake.findFirst({
       where: { id },
     });
@@ -1366,6 +1714,11 @@ export const updateCarMake = async (
 
 export const deleteCarMake = async (id: string) => {
   try {
+    const permissionError = await ensureAdminPermission("carManagement", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingCarMake = await db.carMake.findFirst({
       where: { id },
     });
@@ -1392,6 +1745,11 @@ export const createCarModel = async (
   const parseValues = CarModelValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("carManagement", "create");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingCarModel = await db.carModel.findFirst({
       where: {
         name: parseValues.name,
@@ -1420,6 +1778,11 @@ export const updateCarModel = async (
 ) => {
   const parseValues = CarModelValidators.parse(values);
   try {
+    const permissionError = await ensureAdminPermission("carManagement", "update");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingCarModel = await db.carModel.findFirst({
       where: { id },
     });
@@ -1464,6 +1827,11 @@ export const updateCarModel = async (
 
 export const deleteCarModel = async (id: string) => {
   try {
+    const permissionError = await ensureAdminPermission("carManagement", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingCarModel = await db.carModel.findFirst({
       where: { id },
     });
@@ -1490,6 +1858,11 @@ export const createTireSize = async (
   const parseValues = TireSizeValidators.parse(values);
 
   try {
+    const permissionError = await ensureAdminPermission("tireSizes", "create");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingTireSize = await db.tireSize.findFirst({
       where: {
         width: parseValues.width,
@@ -1521,6 +1894,11 @@ export const updateTireSize = async (
 ) => {
   const parseValues = TireSizeValidators.parse(values);
   try {
+    const permissionError = await ensureAdminPermission("tireSizes", "update");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingTireSize = await db.tireSize.findFirst({
       where: { id },
     });
@@ -1561,6 +1939,11 @@ export const updateTireSize = async (
 
 export const deleteTireSize = async (id: string) => {
   try {
+    const permissionError = await ensureAdminPermission("tireSizes", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
     const existingTireSize = await db.tireSize.findFirst({
       where: { id },
     });
@@ -1645,9 +2028,21 @@ export const getCarDataForSearch = async () => {
       const modelsMap: { [key: string]: number[] } = {};
 
       make.models.forEach((model) => {
-        // Get unique years from product compatibilities for this model
+        // Get unique years from both the model's years field and product compatibilities
         const years = new Set<number>();
 
+        // First, add years from the CarModel's years field (primary source)
+        if (
+          model.years &&
+          Array.isArray(model.years) &&
+          model.years.length > 0
+        ) {
+          model.years.forEach((year) => {
+            years.add(year);
+          });
+        }
+
+        // Then, add years from product compatibilities as a supplement
         model.compatibilities.forEach((compat) => {
           if (compat.year) {
             years.add(compat.year);
@@ -1671,5 +2066,548 @@ export const getCarDataForSearch = async () => {
   } catch (error) {
     console.error("Error fetching car data for search:", error);
     return { error: "Failed to fetch car data" };
+  }
+};
+
+// Feedback CRUD
+export const submitFeedback = async (
+  values: z.infer<typeof FeedbackValidators>
+) => {
+  const parseValues = FeedbackValidators.parse(values);
+
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { error: "You must be logged in to submit feedback" };
+    }
+
+    const user = await db.users.findUnique({ where: { authId: userId } });
+
+    if (!user) {
+      return { error: "User not found" };
+    }
+
+    const feedback = await db.feedback.create({
+      data: {
+        userId: user.id,
+        rating: parseValues.rating,
+        comment: parseValues.comment || null,
+      },
+    });
+
+    return {
+      success: "Feedback submitted successfully! Thank you for your input.",
+      feedback,
+    };
+  } catch (error) {
+    console.error("Error submitting feedback:", error);
+    return { error: "Failed to submit feedback" };
+  }
+};
+
+// Check if user can review a product (has completed and paid order)
+export const canUserReviewProduct = async (productId: string) => {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return {
+        canReview: false,
+        error: "You must be logged in to review a product",
+      };
+    }
+
+    const user = await db.users.findUnique({ where: { authId: userId } });
+
+    if (!user) {
+      return { canReview: false, error: "User not found" };
+    }
+
+    // Check if user has a completed and paid order with this product
+    const hasValidOrder = await db.order.findFirst({
+      where: {
+        userId: user.id,
+        status: "COMPLETED",
+        paymentStatus: "PAID",
+        orderItem: {
+          some: {
+            productId: productId,
+          },
+        },
+      },
+    });
+
+    if (!hasValidOrder) {
+      return {
+        canReview: false,
+        error:
+          "You can only review products from orders that are completed and paid",
+      };
+    }
+
+    // Check if user already reviewed this product
+    const existingReview = await db.review.findFirst({
+      where: {
+        productId: productId,
+        userId: user.id,
+      },
+    });
+
+    if (existingReview) {
+      return {
+        canReview: false,
+        error: "You have already reviewed this product",
+      };
+    }
+
+    return { canReview: true };
+  } catch (error) {
+    console.error("Error checking review eligibility:", error);
+    return { canReview: false, error: "Failed to check review eligibility" };
+  }
+};
+
+// Review CRUD
+export const submitReview = async (
+  values: z.infer<typeof ReviewValidators>
+) => {
+  const parseValues = ReviewValidators.parse(values);
+
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { error: "You must be logged in to submit a review" };
+    }
+
+    const user = await db.users.findUnique({ where: { authId: userId } });
+
+    if (!user) {
+      return { error: "User not found" };
+    }
+
+    // Check if user can review this product
+    const canReview = await canUserReviewProduct(parseValues.productId);
+    if (!canReview.canReview) {
+      return { error: canReview.error || "You cannot review this product" };
+    }
+
+    const review = await db.review.create({
+      data: {
+        productId: parseValues.productId,
+        userId: user.id,
+        rating: parseValues.rating,
+        comment: parseValues.comment || null,
+      },
+      include: {
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    return {
+      success: "Review submitted successfully! Thank you for your feedback.",
+      review,
+    };
+  } catch (error) {
+    console.error("Error submitting review:", error);
+    return { error: "Failed to submit review" };
+  }
+};
+
+export const getProductReviews = async (productId: string) => {
+  try {
+    const reviews = await db.review.findMany({
+      where: {
+        productId,
+      },
+      include: {
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    // Calculate average rating
+    const averageRating =
+      reviews.length > 0
+        ? reviews.reduce((sum, review) => sum + review.rating, 0) /
+          reviews.length
+        : 0;
+
+    // Count ratings
+    const ratingCounts = {
+      5: reviews.filter((r) => r.rating === 5).length,
+      4: reviews.filter((r) => r.rating === 4).length,
+      3: reviews.filter((r) => r.rating === 3).length,
+      2: reviews.filter((r) => r.rating === 2).length,
+      1: reviews.filter((r) => r.rating === 1).length,
+    };
+
+    return {
+      reviews,
+      averageRating: Math.round(averageRating * 10) / 10, // Round to 1 decimal
+      totalReviews: reviews.length,
+      ratingCounts,
+    };
+  } catch (error) {
+    console.error("Error fetching reviews:", error);
+    return { error: "Failed to fetch reviews" };
+  }
+};
+
+// Get average ratings for multiple products (batch query)
+export const getProductsRatings = async (productIds: string[]) => {
+  try {
+    if (productIds.length === 0) {
+      return {};
+    }
+
+    const reviews = await db.review.groupBy({
+      by: ["productId"],
+      where: {
+        productId: {
+          in: productIds,
+        },
+      },
+      _avg: {
+        rating: true,
+      },
+      _count: {
+        rating: true,
+      },
+    });
+
+    // Convert to a map for easy lookup
+    const ratingsMap: Record<
+      string,
+      { averageRating: number; totalReviews: number }
+    > = {};
+
+    reviews.forEach((review) => {
+      ratingsMap[review.productId] = {
+        averageRating: review._avg.rating
+          ? Math.round(review._avg.rating * 10) / 10
+          : 0,
+        totalReviews: review._count.rating || 0,
+      };
+    });
+
+    // Ensure all product IDs have an entry (even if they have no reviews)
+    productIds.forEach((id) => {
+      if (!ratingsMap[id]) {
+        ratingsMap[id] = {
+          averageRating: 0,
+          totalReviews: 0,
+        };
+      }
+    });
+
+    return ratingsMap;
+  } catch (error) {
+    console.error("Error fetching products ratings:", error);
+    return {};
+  }
+};
+
+// Get sold counts for multiple products (only COMPLETED and PAID orders)
+export const getProductsSoldCounts = async (productIds: string[]) => {
+  try {
+    if (productIds.length === 0) {
+      return {};
+    }
+
+    // Get all order items for these products where order is COMPLETED and PAID
+    const orderItems = await db.orderItem.findMany({
+      where: {
+        productId: {
+          in: productIds,
+        },
+        order: {
+          status: "COMPLETED",
+          paymentStatus: "PAID",
+        },
+      },
+      select: {
+        productId: true,
+        quantity: true,
+      },
+    });
+
+    // Sum up quantities by productId
+    const soldCountsMap: Record<string, number> = {};
+
+    orderItems.forEach((item) => {
+      if (!soldCountsMap[item.productId]) {
+        soldCountsMap[item.productId] = 0;
+      }
+      soldCountsMap[item.productId] += item.quantity;
+    });
+
+    // Ensure all product IDs have an entry (even if they have no sales)
+    productIds.forEach((id) => {
+      if (!soldCountsMap[id]) {
+        soldCountsMap[id] = 0;
+      }
+    });
+
+    return soldCountsMap;
+  } catch (error) {
+    console.error("Error fetching products sold counts:", error);
+    return {};
+  }
+};
+
+// Delete Review
+export const deleteReview = async (id: string) => {
+  try {
+    const permissionError = await ensureAdminPermission("productReviews", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
+    // Check if review exists
+    const review = await db.review.findUnique({
+      where: { id },
+    });
+
+    if (!review) {
+      return { error: "Review not found" };
+    }
+
+    // Delete review
+    await db.review.delete({
+      where: { id },
+    });
+
+    return { success: "Review deleted successfully" };
+  } catch (error) {
+    console.error("Error deleting review:", error);
+    return { error: "Failed to delete review" };
+  }
+};
+
+// Ticket CRUD
+export const updateTicket = async (
+  id: string,
+  values: {
+    status?: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
+    priority?: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+  }
+) => {
+  try {
+    const permissionError = await ensureAdminPermission("inquiries", "update");
+    if (permissionError) {
+      return permissionError;
+    }
+
+    // Check if ticket exists
+    const existingTicket = await db.ticket.findUnique({
+      where: { id },
+    });
+
+    if (!existingTicket) {
+      return { error: "Ticket not found" };
+    }
+
+    const ticket = await db.ticket.update({
+      where: { id },
+      data: values,
+    });
+
+    return { success: "Ticket updated successfully", ticket };
+  } catch (error) {
+    console.error("Error updating ticket:", error);
+    return { error: "Failed to update ticket" };
+  }
+};
+
+export const deleteTicket = async (id: string) => {
+  try {
+    const permissionError = await ensureAdminPermission("inquiries", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
+    // Check if ticket exists
+    const ticket = await db.ticket.findUnique({
+      where: { id },
+    });
+
+    if (!ticket) {
+      return { error: "Ticket not found" };
+    }
+
+    // Delete ticket
+    await db.ticket.delete({
+      where: { id },
+    });
+
+    return { success: "Ticket deleted successfully" };
+  } catch (error) {
+    console.error("Error deleting ticket:", error);
+    return { error: "Failed to delete ticket" };
+  }
+};
+
+// Get low stock inventory items for notifications
+export const getLowStockInventory = async () => {
+  try {
+    const permissionError = await ensureAdminPermission(
+      "inventoryManagement",
+      "view"
+    );
+    if (permissionError) {
+      return { error: permissionError.error, data: [] };
+    }
+
+    const lowStockItems = await db.inventory.findMany({
+      where: {
+        status: {
+          in: ["LOW_STOCK", "OUT_OF_STOCK"],
+        },
+      },
+      include: {
+        product: {
+          include: {
+            brand: true,
+          },
+        },
+      },
+      orderBy: {
+        quantity: "asc", // Show lowest stock first
+      },
+    });
+
+    return {
+      success: "Low stock items fetched successfully",
+      data: lowStockItems,
+    };
+  } catch (error) {
+    console.error("Error fetching low stock inventory:", error);
+    return { error: "Failed to fetch low stock inventory", data: [] };
+  }
+};
+
+export const deleteFeedback = async (id: string) => {
+  try {
+    const permissionError = await ensureAdminPermission("feedback", "delete");
+    if (permissionError) {
+      return permissionError;
+    }
+
+    // Check if feedback exists
+    const feedback = await db.feedback.findUnique({
+      where: { id },
+    });
+
+    if (!feedback) {
+      return { error: "Feedback not found" };
+    }
+
+    // Delete feedback
+    await db.feedback.delete({
+      where: { id },
+    });
+
+    return { success: "Feedback deleted successfully" };
+  } catch (error) {
+    console.error("Error deleting feedback:", error);
+    return { error: "Failed to delete feedback" };
+  }
+};
+
+// Get feedback for testimonials (public access - no auth required)
+export const getTestimonials = async () => {
+  try {
+    // Fetch feedback with comments and user information
+    const feedbacks = await db.feedback.findMany({
+      where: {
+        comment: {
+          not: null,
+        },
+      },
+      include: {
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+            authId: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: 10, // Limit to 10 most recent testimonials
+    });
+
+    // Transform feedback to testimonial format
+    // Fetch user images from Clerk in parallel
+    const testimonialsWithImages = await Promise.all(
+      feedbacks.map(async (feedback) => {
+        let avatarUrl: string | null = null;
+
+        // Try to get Clerk user image if authId exists
+        if (feedback.user.authId) {
+          try {
+            const clerk = await clerkClient();
+            const clerkUser = await clerk.users.getUser(feedback.user.authId);
+            avatarUrl = clerkUser.imageUrl || null;
+          } catch (error) {
+            // If Clerk API fails, avatarUrl remains null
+            console.error(
+              `Error fetching Clerk user image for ${feedback.user.authId}:`,
+              error
+            );
+            avatarUrl = null;
+          }
+        }
+
+        // If no image from Clerk or authId is null, use fallback
+        if (!avatarUrl) {
+          // Generate avatar URL based on name initials (using UI Avatars service)
+          avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+            `${feedback.user.firstName}+${feedback.user.lastName}`
+          )}&background=c02b2b&color=fff&size=256&bold=true`;
+        }
+
+        // Create designation (without star count, as we'll show stars separately)
+        const getDesignation = (rating: number) => {
+          if (rating >= 4) return "Very Satisfied Customer";
+          if (rating >= 3) return "Satisfied Customer";
+          return "Customer";
+        };
+
+        return {
+          quote: feedback.comment || "",
+          name: `${feedback.user.firstName} ${feedback.user.lastName}`,
+          designation: getDesignation(feedback.rating),
+          rating: feedback.rating,
+          src: avatarUrl,
+        };
+      })
+    );
+
+    return {
+      success: "Testimonials fetched successfully",
+      data: testimonialsWithImages,
+    };
+  } catch (error) {
+    console.error("Error fetching testimonials:", error);
+    return { error: "Failed to fetch testimonials" };
   }
 };
