@@ -27,13 +27,20 @@ import { Order } from "@prisma/client";
 import { IconWalletOff } from "@tabler/icons-react";
 import { Modal } from "@/components/globals/Modal";
 import { Textarea } from "@/components/ui/textarea";
+import { useAdminPermissions } from "@/hooks/use-admin-permissions";
 
 const CellActions = ({ data }: { data: Order }) => {
   const router = useRouter();
+  const { can } = useAdminPermissions();
   const [isOpen, setIsOpen] = React.useState(false);
   const [rejectModalOpen, setRejectModalOpen] = React.useState(false);
   const [reason, setReason] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  const canDelete = can("orders", "delete");
+  const canUpdatePaymentStatus =
+    data.status !== "CANCELLED" && data.paymentStatus !== "PAID";
+  const canMarkPaymentFailed =
+    data.status !== "CANCELLED" && data.paymentStatus !== "FAILED";
 
   const handleDelete = async () => {
     try {
@@ -58,8 +65,10 @@ const CellActions = ({ data }: { data: Order }) => {
         toast.error(response.error);
         return;
       }
-      toast.success(`Order marked as ${status}`);
       router.refresh();
+      // Trigger a second refresh to ensure RSC payload is updated after mutation.
+      setTimeout(() => router.refresh(), 150);
+      toast.success(`Order marked as ${status}`);
     } catch (error) {
       console.log(error);
       toast.error("Something went wrong");
@@ -135,9 +144,9 @@ const CellActions = ({ data }: { data: Order }) => {
             <EditIcon className="size-4" />
             View Details
           </DropdownMenuItem>
-          {data.status === "PENDING" && (
+          {(canUpdatePaymentStatus || canMarkPaymentFailed || data.status === "PENDING") && (
             <>
-              {data.paymentStatus === "PENDING" && (
+              {canUpdatePaymentStatus && (
                 <>
                   <DropdownMenuItem
                     onClick={() => handleTogglePaymentStatus("PAID")}
@@ -145,6 +154,10 @@ const CellActions = ({ data }: { data: Order }) => {
                     <Wallet className="size-4" />
                     Mark as Paid
                   </DropdownMenuItem>
+                </>
+              )}
+              {canMarkPaymentFailed && (
+                <>
                   <DropdownMenuItem
                     onClick={() => handleTogglePaymentStatus("FAILED")}
                   >
@@ -153,16 +166,22 @@ const CellActions = ({ data }: { data: Order }) => {
                   </DropdownMenuItem>
                 </>
               )}
-              <DropdownMenuItem onClick={() => setRejectModalOpen(true)}>
-                <XCircle className="size-4" /> Reject Order
+              {data.status === "PENDING" && (
+                <DropdownMenuItem onClick={() => setRejectModalOpen(true)}>
+                  <XCircle className="size-4" /> Reject Order
+                </DropdownMenuItem>
+              )}
+            </>
+          )}
+          {canDelete && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setIsOpen(true)}>
+                <ArchiveIcon className="size-4" />
+                Delete
               </DropdownMenuItem>
             </>
           )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => setIsOpen(true)}>
-            <ArchiveIcon className="size-4" />
-            Delete
-          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </>
