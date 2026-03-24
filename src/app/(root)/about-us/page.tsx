@@ -5,14 +5,17 @@ import {
   HISTORY,
   MISSION,
   TEAM,
-  TESTIMONIALS,
   VISION,
 } from "@/constants";
 import { Card, CardContent } from "@/components/ui/card";
 import Image from "next/image";
 import { AnimatedTestimonials } from "@/components/globals/AnimatedTestimonials";
+import { getTestimonials } from "@/actions";
 
-const Page = () => {
+const Page = async () => {
+  // Fetch testimonials from database
+  const testimonialsResult = await getTestimonials();
+  const testimonials = testimonialsResult.data || [];
   return (
     <div className="min-h-screen">
       <div className="w-full h-[75vh] relative bg-gray-500">
@@ -23,7 +26,7 @@ const Page = () => {
           fill
         />
       </div>
-      <section className="mt-10 pb-20 grid lg:grid-cols-2 gap-10 grid-cols-1 px-20">
+      <section className="mt-10 lg:pb-20 pb-10 grid lg:grid-cols-2 gap-10 grid-cols-1 lg:px-20 px-5">
         <div className="">
           <h3 className="text-primary text-4xl font-bold tracking-tight text-center">
             What is Tyre2Go?
@@ -46,10 +49,10 @@ const Page = () => {
         </div>
         <div className="relative w-full h-[500px]">
           <Image
-            src="/shop.jpg"
+            src="/about.jpg"
             alt="Tyre2Go"
             fill
-            className="object-contain"
+            className="object-cover"
           />
         </div>
       </section>
@@ -57,7 +60,7 @@ const Page = () => {
         <h3 className="text-primary text-4xl font-bold tracking-tight text-center">
           Our Core Values
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 pb-20 gap-6 px-20 mt-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 lg:pb-20 pb-10 gap-6 lg:px-20 px-5 mt-10">
           {CORE_VALUES.map((value, index) => (
             <Card
               key={index}
@@ -74,7 +77,7 @@ const Page = () => {
           ))}
         </div>
       </section>
-      <section className="pb-10">
+      <section className="pb-10 lg:px-20 px-5">
         <div className="text-center mb-12">
           <h3 className="text-5xl font-bold text-primary mb-3 tracking-tight">
             Our Team
@@ -132,7 +135,15 @@ const Page = () => {
         <h3 className="text-primary text-4xl font-bold tracking-tight text-center">
           What our customers say about us
         </h3>
-        <AnimatedTestimonials testimonials={TESTIMONIALS} />
+        {testimonials.length > 0 ? (
+          <AnimatedTestimonials testimonials={testimonials} />
+        ) : (
+          <div className="text-center py-20">
+            <p className="text-muted-foreground text-lg">
+              No testimonials available yet. Be the first to share your feedback!
+            </p>
+          </div>
+        )}
       </section>
     </div>
   );
