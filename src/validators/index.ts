@@ -6,6 +6,11 @@ export const BrandValidators = z.object({
   logo: z.string().min(1, { message: "Logo URL is required." }),
   thumbnail: z.string().min(1, { message: "Thumbnail URL is required." }),
   type: z.string().min(1, { message: "Type is required." }),
+  colorScheme: z.object({
+    primary: z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, { message: "Primary color must be a valid hex color." }),
+    secondary: z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, { message: "Secondary color must be a valid hex color." }),
+    accent: z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, { message: "Accent color must be a valid hex color." }).optional(),
+  }).optional(),
 });
 
 export const ProductValidators = z.object({
@@ -21,6 +26,7 @@ export const ProductValidators = z.object({
   warranty: z.string().min(10, { message: "Warranty details are required." }),
   tireSize: z.string().optional(),
   brandId: z.string().min(1, { message: "Brand is required." }),
+  threeDModel: z.string().optional(),
   tireSizeIds: z.array(z.string()).optional(),
   tireSizePricing: z
     .array(
@@ -44,9 +50,7 @@ export const ProductValidators = z.object({
 
 export const InventoryValidators = z.object({
   productId: z.string().min(2, { message: "Product is required." }),
-  quantity: z.number().min(0, { message: "Quantity must be at least 0." }),
-  minStock: z.number().min(0, { message: "Minimum stock must be at least 0." }),
-  maxStock: z.number().optional(),
+  quantity: z.number(), // Allow negative values for critical stock tracking
   sku: z.string().optional(),
 });
 
@@ -98,10 +102,42 @@ export const CarMakeValidators = z.object({
 export const CarModelValidators = z.object({
   name: z.string().min(2, { message: "Name is required." }),
   makeId: z.string().min(1, { message: "Car make is required." }),
+  years: z.array(z.number().min(1900).max(2100)).optional(),
 });
 
 export const TireSizeValidators = z.object({
   width: z.number().min(1, { message: "Width must be at least 1." }),
   ratio: z.number().optional(),
   diameter: z.number().optional(),
+});
+
+export const FeedbackValidators = z.object({
+  rating: z.number().min(1, { message: "Rating is required." }).max(5, { message: "Rating must be between 1 and 5." }),
+  comment: z
+    .string()
+    .optional()
+    .refine(
+      (val) => {
+        if (!val) return true; // Optional field, empty is allowed
+        // Allow only alphanumeric, spaces, and the characters: .,!?()
+        return /^[a-zA-Z0-9\s.,!?()]*$/.test(val);
+      },
+      { message: "Comment can only contain letters, numbers, spaces, and these characters: . , ! ? ( )" }
+    ),
+});
+
+export const ReviewValidators = z.object({
+  productId: z.string().min(1, { message: "Product ID is required." }),
+  rating: z.number().min(1, { message: "Rating is required." }).max(5, { message: "Rating must be between 1 and 5." }),
+  comment: z
+    .string()
+    .optional()
+    .refine(
+      (val) => {
+        if (!val) return true; // Optional field, empty is allowed
+        // Allow only alphanumeric, spaces, and the characters: .,!?()
+        return /^[a-zA-Z0-9\s.,!?()]*$/.test(val);
+      },
+      { message: "Comment can only contain letters, numbers, spaces, and these characters: . , ! ? ( )" }
+    ),
 });
