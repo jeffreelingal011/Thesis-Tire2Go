@@ -1,9 +1,11 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/forgot-password(.*)",
+  "/reset-password(.*)",
   "/verify-email(.*)",
   "/complete-profile(.*)",
   "/",
@@ -23,19 +25,37 @@ const isPublicRoute = createRouteMatcher([
   "/api/user(.*)", // allow signup + verify API calls
   "/api/stats(.*)",
   "/api/database(.*)",
-  "/admin(.*)", // allow access to admin panel for now, later it should be protected
+  "/api/s3(.*)", // allow S3 proxy and signed URL API calls
 ]);
 
+const isAdminRoute = createRouteMatcher(["/admin(.*)"]);
+
 export default clerkMiddleware(async (auth, req) => {
+  // Protect all non-public routes
   if (!isPublicRoute(req)) {
     await auth.protect();
+  }
+
+  // For admin routes, check authentication here.
+  // User type and module-level authorization are enforced in server layouts/actions.
+  if (isAdminRoute(req)) {
+    const { userId } = await auth();
+
+    if (!userId) {
+      // User not authenticated, redirect to sign-in
+      const signInUrl = new URL("/sign-in", req.url);
+      signInUrl.searchParams.set("redirect_url", req.url);
+      return NextResponse.redirect(signInUrl);
+    }
+
+    // Note: User type checks are handled in app-layer guards.
   }
 });
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // Skip Next.js internals and all static files (including GLB files)
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest|glb)).*)",
     // Always run for API routes
     "/(api|trpc)(.*)",
   ],
