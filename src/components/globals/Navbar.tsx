@@ -3,12 +3,17 @@ import { UserButton, useUser } from "@clerk/nextjs";
 import Image from "next/image";
 import Link from "next/link";
 import React, { useState } from "react";
-import { ChevronDown, LifeBuoy, User } from "lucide-react";
+import { ChevronDown, LifeBuoy, User, ShoppingCart } from "lucide-react";
+import useCart from "@/hooks/use-cart";
+import { Badge } from "@/components/ui/badge";
 
 const Navbar = () => {
   const { isSignedIn } = useUser();
+  const { items } = useCart();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<number | null>(null);
+  
+  const cartItemCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
   const menuItems = [
     {
@@ -53,7 +58,7 @@ const Navbar = () => {
       <div className="w-full bg-primary">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-10">
-            <div className="flex items-center gap-6 text-xs text-white">
+            <div className="flex items-center gap-6 text-sm text-white">
               <Link
                 href="tel:+639778355320"
                 className="hover:text-white/80 transition-colors"
@@ -68,12 +73,6 @@ const Navbar = () => {
               </Link>
             </div>
             <div className="flex items-center gap-4">
-              <Link
-                href="/assistance"
-                className="text-xs text-white hover:text-white/80 transition-colors"
-              >
-                Assistance
-              </Link>
               <div className="flex items-center gap-3">
                 <Link
                   target="_blank"
@@ -81,8 +80,8 @@ const Navbar = () => {
                   className="text-white hover:text-white/80 transition-colors"
                 >
                   <svg
-                    width="16"
-                    height="16"
+                    width="20"
+                    height="20"
                     viewBox="0 0 24 24"
                     fill="currentColor"
                   >
@@ -95,8 +94,8 @@ const Navbar = () => {
                   className="text-white hover:text-white/80 transition-colors"
                 >
                   <svg
-                    width="16"
-                    height="16"
+                    width="20"
+                    height="20"
                     viewBox="0 0 24 24"
                     fill="currentColor"
                   >
@@ -167,10 +166,28 @@ const Navbar = () => {
               >
                 Contact Us
               </Link>
+              <Link
+                href="/feedback"
+                className="px-4 py-2 text-black hover:text-primary transition-colors text-sm font-medium"
+              >
+                Feedback
+              </Link>
             </div>
 
             {/* CTA Buttons */}
             <div className="hidden lg:flex items-center gap-3">
+              <Link
+                href="/cart"
+                className="relative bg-white hover:bg-gray-50 text-primary border border-primary px-4 py-2.5 rounded font-medium text-sm transition-colors flex items-center gap-2"
+              >
+                <ShoppingCart className="size-4" />
+                Cart
+                {cartItemCount > 0 && (
+                  <Badge className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs bg-primary text-white border-0">
+                    {cartItemCount > 99 ? "99+" : cartItemCount}
+                  </Badge>
+                )}
+              </Link>
               <Link
                 href="/tire-selector"
                 className="bg-primary hover:bg-primary/90 text-white px-4 py-2.5 rounded font-medium text-sm transition-colors flex items-center gap-2"
@@ -179,7 +196,30 @@ const Navbar = () => {
                 Tire selector
               </Link>
               {isSignedIn ? (
-                <UserButton />
+                <UserButton>
+                  <UserButton.MenuItems>
+                    <UserButton.Link
+                      href="/order-history"
+                      label="Order History"
+                      labelIcon={
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                          />
+                        </svg>
+                      }
+                    />
+                  </UserButton.MenuItems>
+                </UserButton>
               ) : (
                 <Link
                   href="/sign-in"
@@ -225,7 +265,7 @@ const Navbar = () => {
 
       {/* Mobile Navigation Menu */}
       {isMenuOpen && (
-        <div className="lg:hidden bg-white border-t shadow-lg">
+        <div className="lg:hidden bg-white border-t shadow-lg max-h-[calc(100vh-140px)] overflow-y-auto">
           <div className="px-4 pt-2 pb-3 space-y-1">
             {menuItems.map((menu, idx) => (
               <div key={idx} className="border-b border-gray-100 pb-2 mb-2">
@@ -236,6 +276,7 @@ const Navbar = () => {
                   <Link
                     key={itemIdx}
                     href={`/${item.url}`}
+                    onClick={() => setIsMenuOpen(false)}
                     className="block px-6 py-2 text-sm text-gray-600 hover:text-primary hover:bg-gray-50"
                   >
                     {item.label}
@@ -245,22 +286,68 @@ const Navbar = () => {
             ))}
             <Link
               href="/about-us"
+              onClick={() => setIsMenuOpen(false)}
               className="block px-3 py-2 text-gray-700 hover:text-primary hover:bg-gray-50"
             >
               About Us
             </Link>
+            <Link
+              href="/contact-us"
+              onClick={() => setIsMenuOpen(false)}
+              className="block px-3 py-2 text-gray-700 hover:text-primary hover:bg-gray-50"
+            >
+              Contact Us
+            </Link>
+            <Link
+              href="/feedback"
+              onClick={() => setIsMenuOpen(false)}
+              className="block px-3 py-2 text-gray-700 hover:text-primary hover:bg-gray-50"
+            >
+              Feedback
+            </Link>
             <div className="pt-3 space-y-2">
+              {isSignedIn ? (
+                <div className="px-3 py-2">
+                  <UserButton>
+                    <UserButton.MenuItems>
+                      <UserButton.Link
+                        href="/order-history"
+                        label="Order History"
+                        labelIcon={
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                            />
+                          </svg>
+                        }
+                      />
+                    </UserButton.MenuItems>
+                  </UserButton>
+                </div>
+              ) : (
+                <Link
+                  href="/sign-in"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="block border border-primary text-primary px-4 py-2.5 rounded font-medium text-center"
+                >
+                  Sign In
+                </Link>
+              )}
               <Link
                 href="/tire-selector"
-                className="block bg-primary text-gray-900 px-4 py-2 rounded font-medium text-center"
+                onClick={() => setIsMenuOpen(false)}
+                className="block bg-primary text-white px-4 py-2.5 rounded font-medium text-center"
               >
                 Tire selector
-              </Link>
-              <Link
-                href="/find-dealer"
-                className="block bg-gray-700 text-white px-4 py-2 rounded font-medium text-center"
-              >
-                Find a dealer
               </Link>
             </div>
           </div>

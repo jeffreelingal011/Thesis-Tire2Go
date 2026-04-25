@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import React from "react";
@@ -15,7 +16,9 @@ import { Button } from "@/components/ui/button";
 import { IconShare, IconShoppingCart } from "@tabler/icons-react";
 import { Separator } from "@/components/ui/separator";
 import useCart from '@/hooks/use-cart';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
+import { toast } from 'sonner';
+import { formatCurrency } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -24,12 +27,27 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import ProductReviews from "@/components/globals/ProductReviews";
 
 const TireDetails = ({ data }: { data: ProductWithBrand }) => {
   const router = useRouter();
+  const pathname = usePathname();
   const { addItem } = useCart();
+  const [activeTab, setActiveTab] = React.useState("overview");
+
+  // Check URL for tab parameter on mount
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get("tab");
+      if (tab === "reviews") {
+        setActiveTab("reviews");
+      }
+    }
+  }, []);
 
   // Get available tire sizes with pricing
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const tireSizeOptions = data.productSize || [];
 
   // State for selected tire size
@@ -84,8 +102,38 @@ const TireDetails = ({ data }: { data: ProductWithBrand }) => {
       brand: data.brand.name,
       tireSize: tireSizeDisplay,
     });
+  };
 
-    router.push('/cart');
+  const handleShare = async () => {
+    const url = `${window.location.origin}${pathname}`;
+    const shareData = {
+      title: `${data.name} - ${data.brand.name}`,
+      text: `Check out this tire: ${data.name}`,
+      url: url,
+    };
+
+    try {
+      // Check if Web Share API is supported (mainly mobile devices)
+      if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+        await navigator.share(shareData);
+        toast.success("Shared successfully!");
+      } else {
+        // Fallback: Copy to clipboard
+        await navigator.clipboard.writeText(url);
+        toast.success("Link copied to clipboard!");
+      }
+    } catch (error: any) {
+      // User cancelled the share or clipboard failed
+      if (error.name !== 'AbortError') {
+        // Try fallback if share was cancelled
+        try {
+          await navigator.clipboard.writeText(url);
+          toast.success("Link copied to clipboard!");
+        } catch {
+          toast.error("Failed to share. Please copy the link manually.");
+        }
+      }
+    }
   };
   return (
     <div>
@@ -146,6 +194,7 @@ const TireDetails = ({ data }: { data: ProductWithBrand }) => {
             <Button
               variant="outline"
               className="bg-transparent text-primary border-primary hover:text-primary hover:bg-primary/5"
+              onClick={handleShare}
             >
               <IconShare className="size-4" />
               Share
@@ -191,15 +240,15 @@ const TireDetails = ({ data }: { data: ProductWithBrand }) => {
                             {ts.isClearanceSale && ts.discountedPrice ? (
                               <>
                                 <span className="text-sm font-semibold text-primary">
-                                  ₱{ts.discountedPrice.toLocaleString()}
+                                  ₱ {formatCurrency(ts.discountedPrice)}
                                 </span>
                                 <span className="text-xs line-through text-muted-foreground">
-                                  ₱{ts.price.toLocaleString()}
+                                  ₱ {formatCurrency(ts.price)}
                                 </span>
                               </>
                             ) : (
                               <span className="text-sm font-semibold">
-                                ₱{ts.price.toLocaleString()}
+                                ₱ {formatCurrency(ts.price)}
                               </span>
                             )}
                           </div>
@@ -221,7 +270,7 @@ const TireDetails = ({ data }: { data: ProductWithBrand }) => {
             <div className="flex items-center gap-2">
               {displayDiscountedPrice && displayDiscountedPrice < displayPrice && (
                 <p className="font-bold text-3xl text-primary">
-                  ₱{displayDiscountedPrice.toLocaleString()}
+                  ₱ {formatCurrency(displayDiscountedPrice)}
                 </p>
               )}
               <p className={`font-medium mt-2 ${
@@ -229,13 +278,13 @@ const TireDetails = ({ data }: { data: ProductWithBrand }) => {
                   ? "line-through text-muted-foreground text-lg"
                   : "text-3xl text-primary font-bold"
               }`}>
-                ₱{displayPrice.toLocaleString()}
+                ₱ {formatCurrency(displayPrice)}
               </p>
             </div>
           </div>
           {displayDiscountedPrice !== null && displayDiscountedPrice < displayPrice && (
             <p className="text-green-900 font-bold mt-3">
-              SAVE ₱{(displayPrice - displayDiscountedPrice).toLocaleString()}!
+              SAVE ₱ {formatCurrency(displayPrice - displayDiscountedPrice)}!
             </p>
           )}
           <Separator className="my-3 !h-[2px]" />
@@ -271,7 +320,7 @@ const TireDetails = ({ data }: { data: ProductWithBrand }) => {
       </div>
       {/* Tire Tabs */}
       <div className="border border-gray-400 mt-5">
-        <Tabs defaultValue="overview" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="w-full p-0 bg-background justify-start border-b rounded-none">
             <TabsTrigger
               value="overview"
@@ -318,9 +367,7 @@ const TireDetails = ({ data }: { data: ProductWithBrand }) => {
             </div>
           </TabsContent>
           <TabsContent value="reviews">
-            <div className="py-2 px-3">
-              <h3 className="font-bold text-lg">Reviews</h3>
-            </div>
+            <ProductReviews productId={data.id} />
           </TabsContent>
           <TabsContent value="product">
             <div className="py-2 px-3">

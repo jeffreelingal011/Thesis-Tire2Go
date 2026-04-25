@@ -32,12 +32,12 @@ export const OrderRejectionEmail = ({ order }: OrderRejectionEmailProps) => (
         <Section style={track.container}>
           <Row>
             <Column>
-              <Text style={global.paragraphWithBold}>Order Number</Text>
-              <Text style={track.number}>{order.id}</Text>
+              <Text style={global.paragraphWithBold}>Tracking Number</Text>
+              <Text style={track.number}>{order.trackingNumber ?? order.id}</Text>
             </Column>
             <Column align="right">
               <Link
-                href={`https://tire2-go.vercel.app/track-order/${order.id}`}
+                href="https://tire2-go.vercel.app/track-order"
                 style={global.button}
               >
                 View Order
@@ -54,7 +54,7 @@ export const OrderRejectionEmail = ({ order }: OrderRejectionEmailProps) => (
             src={`https://tire2-go.vercel.app/_next/image?url=%2Flogo.png&w=256&q=75`}
             width="66"
             height="22"
-            alt="Tire2Go"
+            alt="Tyre2Go"
             style={{ margin: "auto" }}
           />
           <Heading style={global.heading}>Order Cancelled</Heading>
@@ -120,10 +120,10 @@ export const OrderRejectionEmail = ({ order }: OrderRejectionEmailProps) => (
 
           <Row>
             <Column style={{ width: "70%" }}>
-              <Text style={global.text}>Order Number</Text>
+              <Text style={global.text}>Tracking Number</Text>
             </Column>
             <Column style={{ width: "30%", textAlign: "right" }}>
-              <Text style={global.text}>{order.id}</Text>
+              <Text style={global.text}>{order.trackingNumber ?? order.id}</Text>
             </Column>
           </Row>
 
@@ -172,7 +172,7 @@ export const OrderRejectionEmail = ({ order }: OrderRejectionEmailProps) => (
             </Text>
           </Row>
           <Row>
-            <Text style={footer.text}>© 2025 Tire2Go. All Rights Reserved.</Text>
+            <Text style={footer.text}>© 2025 Tyre2Go. All Rights Reserved.</Text>
           </Row>
         </Section>
       </Container>

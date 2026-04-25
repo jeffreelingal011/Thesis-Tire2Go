@@ -30,8 +30,17 @@ import {
   Brands,
   TireSize,
   CarMake,
-  CarModel,
 } from "@prisma/client";
+
+type CarModelWithYears = {
+  id: string;
+  name: string;
+  makeId: string;
+  years?: number[] | null;
+  createdAt: Date;
+  updatedAt: Date;
+  make: CarMake;
+};
 import ImageUpload from "@/components/globals/ImageUpload";
 import { RichTextEditor } from "@/components/globals/RichTextEditor";
 import Image from "next/image";
@@ -39,6 +48,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ProductWithRelations, ProductSizeWithPricing } from "@/types";
+import { uploadFile } from "@/lib/upload";
 
 const ProductForm = ({
   initialData,
@@ -51,7 +61,7 @@ const ProductForm = ({
   brands: Brands[];
   tireSizes: TireSize[];
   carMakes: CarMake[];
-  carModels: CarModel[];
+  carModels: CarModelWithYears[];
 }) => {
   const router = useRouter();
   const [tireSizeSearch, setTireSizeSearch] = useState("");
@@ -60,10 +70,13 @@ const ProductForm = ({
     price: number;
     discountedPrice?: number;
   }>>({});
+  const [selectedMake, setSelectedMake] = useState<string>("");
+  const [selectedModel, setSelectedModel] = useState<string>("");
+  const [selectedYears, setSelectedYears] = useState<string[]>([]);
 
   // Get models grouped by make for easier selection
   const modelsByMake = useMemo(() => {
-    const grouped: Record<string, CarModel[]> = {};
+    const grouped: Record<string, CarModelWithYears[]> = {};
     carModels.forEach((model) => {
       if (!grouped[model.makeId]) {
         grouped[model.makeId] = [];
@@ -72,6 +85,19 @@ const ProductForm = ({
     });
     return grouped;
   }, [carModels]);
+
+  // Get available years for the selected model
+  const availableYears = useMemo(() => {
+    if (!selectedModel) return [];
+    const model = carModels.find((m) => m.id === selectedModel);
+    if (!model) return [];
+
+    // Use years field if available, otherwise return empty array
+    if (model.years && Array.isArray(model.years) && model.years.length > 0) {
+      return [...model.years].sort((a, b) => a - b);
+    }
+    return [];
+  }, [selectedModel, carModels]);
 
   // Filter tire sizes based on search
   const filteredTireSizes = useMemo(() => {
@@ -118,6 +144,7 @@ const ProductForm = ({
       warranty: initialData?.warranty || "",
       tireSize: initialData?.tireSize || "",
       brandId: initialData?.brandId || "",
+      threeDModel: initialData?.threeDModel || "",
       tireSizeIds:
         initialData?.productSize?.map((ps) => ps.tireSizeId) || [],
       compatibilities:
@@ -127,10 +154,6 @@ const ProductForm = ({
         })) || [],
     },
   });
-
-  const [selectedMake, setSelectedMake] = useState<string>("");
-  const [selectedModel, setSelectedModel] = useState<string>("");
-  const [selectedYear, setSelectedYear] = useState<string>("");
 
   const { isSubmitting } = form.formState;
 
@@ -596,6 +619,59 @@ const ProductForm = ({
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={form.control}
+              name="threeDModel"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    3D Model (.glb) <span className="text-muted-foreground">(optional)</span>
+                  </FormLabel>
+                  <FormControl>
+                    <div className="space-y-2">
+                      <Input
+                        type="text"
+                        value={field.value || ""}
+                        readOnly
+                        placeholder="No 3D model uploaded"
+                        disabled={isSubmitting}
+                      />
+                      <Input
+                        type="file"
+                        accept=".glb"
+                        disabled={isSubmitting}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+
+                          if (!file.name.toLowerCase().endsWith(".glb")) {
+                            toast.error("Please upload a .glb file.");
+                            return;
+                          }
+
+                          try {
+                            const { url } = await uploadFile(file);
+                            field.onChange(url);
+                            toast.success("3D model uploaded successfully.");
+                          } catch (error) {
+                            console.error("3D model upload failed:", error);
+                            toast.error("Failed to upload 3D model. Please try again.");
+                          } finally {
+                            // reset file input so same file can be re-selected if needed
+                            e.target.value = "";
+                          }
+                        }}
+                      />
+                    </div>
+                  </FormControl>
+                  <FormDescription>
+                    Upload an optional 3D model of the product in <code>.glb</code> format. This will be used for 3D visualization only.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
 
           {/* Compatibility Section */}
@@ -622,7 +698,7 @@ const ProductForm = ({
                         onValueChange={(value) => {
                           setSelectedMake(value);
                           setSelectedModel("");
-                          setSelectedYear("");
+                          setSelectedYears([]);
                         }}
                         disabled={isSubmitting}
                       >
@@ -642,7 +718,7 @@ const ProductForm = ({
                         value={selectedModel}
                         onValueChange={(value) => {
                           setSelectedModel(value);
-                          setSelectedYear("");
+                          setSelectedYears([]);
                         }}
                         disabled={isSubmitting || !selectedMake}
                       >
@@ -660,52 +736,167 @@ const ProductForm = ({
                       </Select>
 
                       <div className="flex gap-2">
-                        <Input
-                          type="number"
-                          placeholder="Year (e.g. 2020)"
-                          value={selectedYear}
-                          onChange={(e) => setSelectedYear(e.target.value)}
-                          disabled={isSubmitting || !selectedModel}
-                          min={1900}
-                          max={2100}
-                        />
+                        <div className="flex-1">
+                          <div className="border rounded-md p-2 max-h-40 overflow-y-auto">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-xs text-muted-foreground">
+                                {!selectedModel
+                                  ? "Select model first"
+                                  : availableYears.length === 0
+                                    ? "No years available for this model"
+                                    : `Select one or more years (${selectedYears.length}/${availableYears.length} selected)`}
+                              </p>
+                              {selectedModel && availableYears.length > 0 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => {
+                                    const allSelected = availableYears.every((year) =>
+                                      selectedYears.includes(year.toString())
+                                    );
+                                    if (allSelected) {
+                                      // Deselect all
+                                      setSelectedYears([]);
+                                    } else {
+                                      // Select all
+                                      setSelectedYears(
+                                        availableYears.map((year) => year.toString())
+                                      );
+                                    }
+                                  }}
+                                  disabled={isSubmitting}
+                                >
+                                  {availableYears.every((year) =>
+                                    selectedYears.includes(year.toString())
+                                  )
+                                    ? "Deselect All"
+                                    : "Select All"}
+                                </Button>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-1">
+                              {availableYears.map((year) => {
+                                const value = year.toString();
+                                const checked = selectedYears.includes(value);
+                                return (
+                                  <label
+                                    key={value}
+                                    className="flex items-center gap-1 text-xs cursor-pointer"
+                                  >
+                                    <Checkbox
+                                      checked={checked}
+                                      onCheckedChange={(isChecked) => {
+                                        setSelectedYears((prev) => {
+                                          if (isChecked) {
+                                            if (prev.includes(value)) return prev;
+                                            return [...prev, value];
+                                          }
+                                          return prev.filter((y) => y !== value);
+                                        });
+                                      }}
+                                      disabled={
+                                        isSubmitting ||
+                                        !selectedModel ||
+                                        availableYears.length === 0
+                                      }
+                                    />
+                                    <span>{year}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
                         <Button
                           type="button"
                           onClick={() => {
-                            if (!selectedModel || !selectedYear) {
+                            if (!selectedModel || selectedYears.length === 0) {
                               toast.error(
-                                "Please select both model and year"
+                                "Please select at least one year for the selected model"
                               );
-                              return;
-                            }
-                            const yearNum = parseInt(selectedYear, 10);
-                            if (isNaN(yearNum) || yearNum < 1900 || yearNum > 2100) {
-                              toast.error("Please enter a valid year");
                               return;
                             }
                             const current = field.value || [];
-                            const exists = current.some(
-                              (c) =>
-                                c.modelId === selectedModel &&
-                                c.year === yearNum
-                            );
-                            if (exists) {
-                              toast.error(
-                                "This compatibility already exists"
+                            const newCompatibilities = [...current];
+
+                            const invalidYears: string[] = [];
+                            const addedYears: number[] = [];
+
+                            selectedYears.forEach((yearStr) => {
+                              const yearNum = parseInt(yearStr, 10);
+                              if (
+                                isNaN(yearNum) ||
+                                yearNum < 1900 ||
+                                yearNum > 2100
+                              ) {
+                                invalidYears.push(yearStr);
+                                return;
+                              }
+
+                              const exists = newCompatibilities.some(
+                                (c) =>
+                                  c.modelId === selectedModel &&
+                                  c.year === yearNum
                               );
+                              if (exists) {
+                                return;
+                              }
+
+                              newCompatibilities.push({
+                                modelId: selectedModel,
+                                year: yearNum,
+                              });
+                              addedYears.push(yearNum);
+                            });
+
+                            if (invalidYears.length > 0) {
+                              toast.error(
+                                `Invalid year${invalidYears.length > 1 ? "s" : ""}: ${invalidYears.join(
+                                  ", "
+                                )}`
+                              );
+                            }
+
+                            if (addedYears.length === 0) {
+                              if (invalidYears.length === 0) {
+                                toast.error(
+                                  "All selected compatibilities already exist"
+                                );
+                              }
                               return;
                             }
-                            field.onChange([
-                              ...current,
-                              { modelId: selectedModel, year: yearNum },
-                            ]);
+
+                            field.onChange(newCompatibilities);
                             setSelectedMake("");
                             setSelectedModel("");
-                            setSelectedYear("");
+                            setSelectedYears([]);
                           }}
-                          disabled={isSubmitting || !selectedModel || !selectedYear}
+                          disabled={
+                            isSubmitting ||
+                            !selectedModel ||
+                            selectedYears.length === 0
+                          }
                         >
                           Add
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedMake("");
+                            setSelectedModel("");
+                            setSelectedYears([]);
+                          }}
+                          disabled={
+                            isSubmitting ||
+                            (!selectedMake &&
+                              !selectedModel &&
+                              selectedYears.length === 0)
+                          }
+                        >
+                          Clear
                         </Button>
                       </div>
                     </div>

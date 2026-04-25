@@ -28,7 +28,7 @@ const HeroCarousel = () => {
   }, [api]);
 
   return (
-    <div className="relative w-[600px] h-[280px]">
+    <div className="relative lg:w-[600px] w-full h-[280px]">
       <Carousel
         setApi={setApi}
         opts={{
@@ -43,7 +43,7 @@ const HeroCarousel = () => {
         className="w-full h-full"
       >
         <CarouselContent>
-          {[1, 2, 3, 4, 5, 6, 7].map((num) => (
+          {[1, 2, 3].map((num) => (
             <CarouselItem key={num} className="w-full h-[280px]">
               <div className="relative w-full h-full">
                 <Image

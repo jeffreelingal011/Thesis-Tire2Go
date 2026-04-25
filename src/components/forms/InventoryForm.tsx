@@ -43,8 +43,6 @@ const InventoryForm = ({
     defaultValues: {
       productId: initialData?.productId || "",
       quantity: initialData?.quantity ?? 0,
-      minStock: initialData?.minStock ?? 0,
-      maxStock: initialData?.maxStock ?? 0,
       sku: initialData?.sku || "",
     },
   });
@@ -147,57 +145,6 @@ const InventoryForm = ({
               </FormItem>
             )}
           />
-          <div className="grid lg:grid-cols-2 grid-cols-1 gap-3.5">
-            <FormField
-              control={form.control}
-              name="minStock"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    Minimum Stock <span className="text-red-600">*</span>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      placeholder="Enter minimum stock"
-                      {...field}
-                      onChange={(e) => field.onChange(e.target.valueAsNumber)}
-                      disabled={isSubmitting}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Threshold to trigger low stock alerts.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="maxStock"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    Maximum Stock{" "}
-                    <span className="text-muted-foreground">(optional)</span>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-					  type="number"
-                      placeholder="Enter maximum stock"
-                      {...field}
-                      onChange={(e) => field.onChange(e.target.valueAsNumber)}
-                      disabled={isSubmitting}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    This is the max capacity or the warehouse limit.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
 
           <FormField
             control={form.control}
