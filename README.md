@@ -19,7 +19,7 @@ main
 If you do not have the project yet, run:
 
 ```bash
-git clone https://github.com/kylemastercoder14/Tire2Go.git
+git clone https://https://github.com/jeffreelingal011/Thesis-Tire2Go.git
 cd Tire2Go
 ```
 
@@ -170,7 +170,7 @@ Password: Tyr32go@123
 For a complete first-time setup:
 
 ```bash
-git clone https://github.com/kylemastercoder14/Tire2Go.git
+git clone https://github.com/jeffreelingal011/Thesis-Tire2Go.git
 cd Tire2Go
 npm install
 copy .env.example .env
